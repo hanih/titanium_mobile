@@ -13,3 +13,5 @@ xcuserdata
 *.LOCAL.*
 *.REMOTE.*
 anvil/driver/config.js
+config.bat
+node_modules
