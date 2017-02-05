@@ -13,6 +13,15 @@
 
 @implementation TiUISlider
 
+#ifdef TI_USE_AUTOLAYOUT
+-(void)initializeTiLayoutView
+{
+    [super initializeTiLayoutView];
+    [self setDefaultHeight:TiDimensionAutoSize];
+    [self setDefaultWidth:TiDimensionAutoFill];
+}
+#endif
+
 -(void)dealloc
 {
 	[sliderView removeTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
@@ -256,7 +265,7 @@
     CGFloat result = [[self sliderView] sizeThatFits:CGSizeZero].height;
     
     //IOS7 DP3 sizeThatFits always returns zero for regular slider
-    if ((result == 0) && ([TiUtils isIOS7OrGreater])) {
+    if (result == 0) {
         result = 30.0;
     }
     return result;

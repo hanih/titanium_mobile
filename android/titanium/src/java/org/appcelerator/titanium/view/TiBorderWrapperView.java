@@ -19,11 +19,14 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Path.Direction;
 import android.graphics.Path.FillType;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.view.ViewOutlineProvider;
+import android.graphics.Outline;
 
 /**
  * This class is a wrapper for Titanium Views with borders. Any view that specifies a border
@@ -35,6 +38,7 @@ public class TiBorderWrapperView extends FrameLayout
 	private static final String TAG = "TiBorderWrapperView";
 
 	private int color = Color.TRANSPARENT;
+	private int bgColor = Color.TRANSPARENT;
 	private float radius = 0;
 	private float borderWidth = 0;
 	private int alpha = -1;
@@ -43,6 +47,7 @@ public class TiBorderWrapperView extends FrameLayout
 	private Path borderPath;
 	private Paint paint;
 	private View child;
+	private Rect bounds = new Rect();
 
 	public TiBorderWrapperView(Context context)
 	{
@@ -58,11 +63,23 @@ public class TiBorderWrapperView extends FrameLayout
 	{
 		updateBorderPath();
 		drawBorder(canvas);
-
 		if (radius > 0) {
 			// This still happens sometimes when hw accelerated so, catch and warn
 			try {
+				// If the view's background color is not transparent, we draw the background first
+				if (bgColor != Color.TRANSPARENT) {
+					paint.setColor(bgColor);
+					canvas.drawPath(innerPath, paint);
+				}
+				// Then we clip it to ensure anti-aliasing.
 				canvas.clipPath(innerPath);
+				
+				// Then we clear the clipped region so when the view draws, alpha doesn't stack if bgColor
+				// has an alpha that is less than 1. We then reset the color and alpha.
+				if (bgColor != Color.TRANSPARENT) {
+					canvas.drawColor(0, PorterDuff.Mode.CLEAR);
+					setAlphaAndColor();
+				}
 			} catch (Exception e) {
 				Log.w(TAG, "clipPath failed on canvas: " + e.getMessage(), Log.DEBUG_MODE);
 			}
@@ -73,7 +90,6 @@ public class TiBorderWrapperView extends FrameLayout
 
 	private void updateBorderPath()
 	{
-		Rect bounds = new Rect();
 		getDrawingRect(bounds);
 		outerRect.set(bounds);
 
@@ -88,18 +104,18 @@ public class TiBorderWrapperView extends FrameLayout
 			float outerRadii[] = new float[8];
 			Arrays.fill(outerRadii, radius);
 			borderPath = new Path();
-			borderPath.addRoundRect(outerRect, outerRadii, Direction.CW);
+			borderPath.addRoundRect(outerRect, outerRadii, Direction.CW); 
 			borderPath.setFillType(FillType.EVEN_ODD);
 			innerPath = new Path();
 			innerPath.setFillType(FillType.EVEN_ODD);
 			if (radius - padding > 0) {
 				float innerRadii[] = new float[8];
 				Arrays.fill(innerRadii, radius - padding);
-				borderPath.addRoundRect(innerRect, innerRadii, Direction.CCW);
 				innerPath.addRoundRect(innerRect, innerRadii, Direction.CW);
+				borderPath.addRoundRect(innerRect, innerRadii, Direction.CCW);
 			} else {
-				borderPath.addRect(innerRect, Direction.CCW);
 				innerPath.addRect(innerRect, Direction.CW);
+				borderPath.addRect(innerRect, Direction.CCW);
 			}
 		} else {
 			borderPath = new Path();
@@ -107,20 +123,40 @@ public class TiBorderWrapperView extends FrameLayout
 			borderPath.addRect(innerRect, Direction.CCW);
 			borderPath.setFillType(FillType.EVEN_ODD);
 		}
+		// set the outline for the view in order to use elevation
+		if (Build.VERSION.SDK_INT >= 21) {
+			ViewOutlineProvider viewOutlineProvider = new ViewOutlineProvider() {
+				@Override
+				public void getOutline(View view, Outline outline) {				            
+					outline.setRoundRect(bounds, radius);
+				}
+			};
+			setOutlineProvider(viewOutlineProvider);
+		}
 	}
 
 	private void drawBorder(Canvas canvas)
 	{
+		setAlphaAndColor();
+		canvas.drawPath(borderPath, paint);
+	}
+
+	private void setAlphaAndColor()
+	{
 		paint.setColor(color);
 		if (alpha > -1) {
 			paint.setAlpha(alpha);
-    	}
-		canvas.drawPath(borderPath, paint);
+		}
 	}
 
 	public void setColor(int color)
 	{
 		this.color = color;
+	}
+	
+	public void setBgColor(int color)
+	{
+		this.bgColor = color;
 	}
 
 	public void setRadius(float radius)

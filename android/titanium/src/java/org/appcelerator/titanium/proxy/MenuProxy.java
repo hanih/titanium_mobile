@@ -20,7 +20,7 @@ import org.appcelerator.titanium.util.TiConvert;
 import org.appcelerator.titanium.view.TiUIView;
 
 import android.os.Message;
-import android.support.v7.internal.view.menu.MenuItemWrapperICS;
+import android.support.v7.view.menu.MenuItemWrapperICS;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -157,10 +157,9 @@ public class MenuProxy extends KrollProxy
 					View nativeView = view.getNativeView();
 					ViewGroup viewParent = (ViewGroup)nativeView.getParent();
 					if (viewParent != null) {
-						Log.e(TAG, "View already has a parent. Can't add it as an action view");
-					} else {
-						mip.setActionView(viewProxy);
+						viewParent.removeView(nativeView);
 					}
+					mip.setActionView(viewProxy);
 				}
 			}
 		}

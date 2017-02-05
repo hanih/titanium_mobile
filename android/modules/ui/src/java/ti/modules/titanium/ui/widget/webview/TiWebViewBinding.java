@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -14,8 +14,6 @@ import java.util.HashMap;
 import java.util.Stack;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollEventCallback;
@@ -23,7 +21,6 @@ import org.appcelerator.kroll.KrollLogging;
 import org.appcelerator.kroll.KrollModule;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiApplication;
-import org.appcelerator.titanium.TiContext;
 import org.appcelerator.titanium.util.TiConvert;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -50,13 +47,13 @@ public class TiWebViewBinding
 		StringBuilder jsonCode = readResourceFile("json2.js");
 		StringBuilder tiCode = readResourceFile("binding.min.js");
 		StringBuilder pollingCode = readResourceFile("polling.min.js");
-		
+
 		if (pollingCode == null) {
 			Log.w(TAG, "Unable to read polling code");
 		} else {
 			POLLING_CODE = pollingCode.toString();
 		}
-		
+
 		StringBuilder scriptCode = new StringBuilder();
 		StringBuilder injectionCode = new StringBuilder();
 		scriptCode.append("\n<script id=\"" + SCRIPT_INJECTION_ID + "\">\n");
@@ -88,21 +85,27 @@ public class TiWebViewBinding
 
 	private ApiBinding apiBinding;
 	private AppBinding appBinding;
+	private TiReturn tiReturn;
+	private WebView webView;
+	private boolean interfacesAdded = false;
 
 	public TiWebViewBinding(WebView webView)
 	{
 		codeSnippets = new Stack<String>();
-
+		this.webView = webView;
 		apiBinding = new ApiBinding();
 		appBinding = new AppBinding();
-		webView.addJavascriptInterface(appBinding, "TiApp");
-		webView.addJavascriptInterface(apiBinding, "TiAPI");
-		webView.addJavascriptInterface(new TiReturn(), "_TiReturn");
+		tiReturn = new TiReturn();
 	}
 
-	public TiWebViewBinding(TiContext tiContext, WebView webView)
+	public void addJavascriptInterfaces()
 	{
-		this(webView);
+		if (webView != null && !interfacesAdded) {
+			webView.addJavascriptInterface(appBinding, "TiApp");
+			webView.addJavascriptInterface(apiBinding, "TiAPI");
+			webView.addJavascriptInterface(tiReturn, "_TiReturn");
+			interfacesAdded = true;
+		}
 	}
 
 	public void destroy()
@@ -110,7 +113,7 @@ public class TiWebViewBinding
 		// remove any event listener that have already been added to the Ti.APP through
 		// this web view instance
 		appBinding.clearEventListeners();
-
+		webView = null;
 		returnSemaphore.release();
 		codeSnippets.clear();
 		destroyed = true;
@@ -147,19 +150,9 @@ public class TiWebViewBinding
 	synchronized public String getJSValue(String expression)
 	{
 		// Don't try to evaluate js code again if the binding has already been destroyed
-		if (!destroyed) {
-			// see if this is an expression or a statement block
-			// Match ; followed by 0 or even quotes
-			Pattern pattern = Pattern.compile(";(?=([^\"]*\"[^\"]*\")*[^\"]*$)");
-			Matcher matcher = pattern.matcher(expression);
-			if (matcher.find()) {
-				String lastStmt = expression.substring(matcher.end(matcher.groupCount() - 1));
-				String stmtBlock = expression.substring(0, matcher.end(matcher.groupCount() - 1));
-				expression = stmtBlock + " return " + lastStmt;
-			} else {
-				expression = " return " + expression;
-			}
-			String code = "_TiReturn.setValue((function(){try{" + expression + "+\"\";}catch(ti_eval_err){return '';}})());";
+		if (!destroyed && interfacesAdded) {
+			String code = "_TiReturn.setValue((function(){try{return " + expression
+				+ "+\"\";}catch(ti_eval_err){return '';}})());";
 			Log.d(TAG, "getJSValue:" + code, Log.DEBUG_MODE);
 			returnSemaphore.drainPermits();
 			synchronized (codeSnippets) {
@@ -180,7 +173,6 @@ public class TiWebViewBinding
 		return null;
 	}
 
-	@SuppressWarnings("unused")
 	private class TiReturn
 	{
 		@JavascriptInterface
@@ -232,7 +224,7 @@ public class TiWebViewBinding
 		{
 			module = TiApplication.getInstance().getModuleByName("App");
 		}
-		
+
 		@JavascriptInterface
 		public void fireEvent(String event, String json)
 		{
@@ -246,7 +238,7 @@ public class TiWebViewBinding
 				Log.e(TAG, "Error parsing event JSON", e);
 			}
 		}
-		
+
 		@JavascriptInterface
 		public int addEventListener(String event, int id)
 		{
@@ -257,13 +249,13 @@ public class TiWebViewBinding
 
 			return result;
 		}
-		
+
 		@JavascriptInterface
 		public void removeEventListener(String event, int id)
 		{
 			module.removeEventListener(event, id);
 		}
-		
+
 		@JavascriptInterface
 		public void clearEventListeners()
 		{
@@ -271,7 +263,7 @@ public class TiWebViewBinding
 				removeEventListener(event, appListeners.get(event));
 			}
 		}
-		
+
 		@JavascriptInterface
 		public String getJSCode()
 		{
@@ -280,7 +272,7 @@ public class TiWebViewBinding
 			}
 			return code;
 		}
-		
+
 		@JavascriptInterface
 		public int hasResult()
 		{
@@ -297,11 +289,10 @@ public class TiWebViewBinding
 				}
 			}
 			return result;
-			
+
 		}
 	}
 
-	@SuppressWarnings("unused")
 	private class ApiBinding
 	{
 		private KrollLogging logging;
@@ -310,31 +301,31 @@ public class TiWebViewBinding
 		{
 			logging = KrollLogging.getDefault();
 		}
-		
+
 		@JavascriptInterface
 		public void log(String level, String arg)
 		{
 			logging.log(level, arg);
 		}
-		
+
 		@JavascriptInterface
 		public void info(String arg)
 		{
 			logging.info(arg);
 		}
-		
+
 		@JavascriptInterface
 		public void debug(String arg)
 		{
 			logging.debug(arg);
 		}
-		
+
 		@JavascriptInterface
 		public void error(String arg)
 		{
 			logging.error(arg);
 		}
-		
+
 		@JavascriptInterface
 		public void trace(String arg)
 		{

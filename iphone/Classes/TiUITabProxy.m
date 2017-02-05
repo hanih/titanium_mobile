@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -51,6 +51,8 @@
 	[self replaceValue:nil forKey:@"badge" notification:NO];
 	[self replaceValue:NUMBOOL(YES) forKey:@"iconIsMask" notification:NO];
 	[self replaceValue:NUMBOOL(YES) forKey:@"activeIconIsMask" notification:NO];
+	[self replaceValue:nil forKey:@"titleColor" notification:NO];
+	[self replaceValue:nil forKey:@"activeTitleColor" notification:NO];
 	[super _configure];
 }
 
@@ -141,6 +143,18 @@
 -(void)setTabGroup:(TiUITabGroupProxy*)proxy
 {
     tabGroup = proxy;
+    /*
+     TIMOB-18155. TabProxy now remembers itself instead of the TabGroup.
+     In the TabGroupProxy, when you remember a tab it gets written to the
+     property table with a key based on proxy hash. However when we change the
+     activeTab property of the TabGroup, it is possible for this property to be
+     deleted. So the JSObject is unprotected and can get Garbage Collected.
+     */
+    if (tabGroup) {
+        [self rememberSelf];
+    } else {
+        [self forgetSelf];
+    }
     if (controller != nil) {
         [TiUtils configureController:controller withObject:tabGroup];
     }
@@ -203,13 +217,22 @@
 		[self setTitle:[self valueForKey:@"title"]];
 		[self setIcon:[self valueForKey:@"icon"]];
 		[self setBadge:[self valueForKey:@"badge"]];
+		[self setBadgeColor:[self valueForKey:@"badgeColor"]];
+		[self setIconInsets:[self valueForKey:@"iconInsets"]];
 		controllerStack = [[NSMutableArray alloc] init];
 		[controllerStack addObject:[self rootController]];
-		if ([TiUtils isIOS7OrGreater]) {
-			[controller.interactivePopGestureRecognizer addTarget:self action:@selector(popGestureStateHandler:)];
-		}
+		[controller.interactivePopGestureRecognizer addTarget:self action:@selector(popGestureStateHandler:)];
+        [[controller interactivePopGestureRecognizer] setDelegate:self];
 	}
 	return controller;
+}
+
+-(BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+{
+    if (current != nil) {
+        return [TiUtils boolValue:[current valueForKey:@"swipeToClose"] def:YES];
+    }
+    return YES;
 }
 
 -(TiProxy<TiTabGroup>*)tabGroup
@@ -247,9 +270,10 @@
 
 -(void)closeWindow:(NSArray*)args
 {
-	TiWindowProxy *window = [args objectAtIndex:0];
-	ENSURE_TYPE(window,TiWindowProxy);
-    if (window == rootWindow) {
+    TiWindowProxy *window = [args objectAtIndex:0];
+    ENSURE_TYPE(window,TiWindowProxy);
+    
+    if (window == rootWindow && ![[TiApp app] willTerminate]) {
         DebugLog(@"[ERROR] Can not close root window of the tab. Use removeTab instead");
         return;
     }
@@ -405,7 +429,12 @@
         }
     }
     if ([self _hasListeners:@"blur"]) {
-        [self fireEvent:@"blur" withObject:nil withSource:self propagate:NO reportSuccess:NO errorCode:0 message:nil];
+        DEPRECATED_REPLACED(@"UI.Tab.Event.blur",@"5.2.0", @"UI.Tab.Event.unselected");
+        [self fireEvent:@"blur" withObject:event withSource:self propagate:NO reportSuccess:NO errorCode:0 message:nil];
+    }
+    
+    if ([self _hasListeners:@"unselected"]) {
+        [self fireEvent:@"unselected" withObject:event withSource:self propagate:NO reportSuccess:NO errorCode:0 message:nil];
     }
 }
 
@@ -429,7 +458,12 @@
         }
     }
     if ([self _hasListeners:@"focus"]) {
-        [self fireEvent:@"focus" withObject:nil withSource:self propagate:NO reportSuccess:NO errorCode:0 message:nil];
+        DEPRECATED_REPLACED(@"UI.Tab.Event.focus",@"5.2.0", @"UI.Tab.Event.selected");
+        [self fireEvent:@"focus" withObject:event withSource:self propagate:NO reportSuccess:NO errorCode:0 message:nil];
+    }
+    
+    if ([self _hasListeners:@"selected"]) {
+        [self fireEvent:@"selected" withObject:event withSource:self propagate:NO reportSuccess:NO errorCode:0 message:nil];
     }
 }
 
@@ -463,15 +497,27 @@
 	}
 	ENSURE_UI_THREAD_0_ARGS;
 	
-    UIViewController* rootController = [rootWindow hostingController];
+	UIViewController* rootController = [rootWindow hostingController];
 	id badgeValue = [TiUtils stringValue:[self valueForKey:@"badge"]];
+#if IS_XCODE_8
+	id badgeColor = [self valueForKey:@"badgeColor"];
+#endif
+	id iconInsets = [self valueForKey:@"iconInsets"];
 	id icon = [self valueForKey:@"icon"];
 	
+	// System-icons
 	if ([icon isKindOfClass:[NSNumber class]])
 	{
 		int value = [TiUtils intValue:icon];
 		UITabBarItem *newItem = [[UITabBarItem alloc] initWithTabBarSystemItem:value tag:value];
 		[newItem setBadgeValue:badgeValue];
+
+#if IS_XCODE_8
+		if (badgeColor != nil && [TiUtils isIOS10OrGreater]) {
+			[newItem setBadgeColor:[[TiUtils colorValue:badgeColor] color]];
+		}
+#endif
+
 		[rootController setTabBarItem:newItem];
 		[newItem release];
 		systemTab = YES;
@@ -510,51 +556,57 @@
 	[rootController setTitle:title];
 	UITabBarItem *ourItem = nil;
     
-    BOOL imageIsMask = NO;
-    
-    if ([TiUtils isIOS7OrGreater]) {
-        
-        //CLEAN UP CODE WHEN WE UPGRADE MIN XCODE VERSION TO XCODE5
-        if (image != nil) {
-            if ([image respondsToSelector:@selector(imageWithRenderingMode:)]) {
-                NSInteger theMode = iconOriginal ? 1/*UIImageRenderingModeAlwaysOriginal*/ : 2/*UIImageRenderingModeAlwaysTemplate*/;
-                image = [(id<UIImageIOS7Support>)image imageWithRenderingMode:theMode];
-            }
+    if (image != nil) {
+        if ([image respondsToSelector:@selector(imageWithRenderingMode:)]) {
+            NSInteger theMode = iconOriginal ? UIImageRenderingModeAlwaysOriginal : UIImageRenderingModeAlwaysTemplate;
+            image = [image imageWithRenderingMode:theMode];
         }
-        if (activeImage != nil) {
-            if ([activeImage respondsToSelector:@selector(imageWithRenderingMode:)]) {
-                NSInteger theMode = activeIconOriginal ? 1/*UIImageRenderingModeAlwaysOriginal*/ : 2/*UIImageRenderingModeAlwaysTemplate*/;
-                activeImage = [(id<UIImageIOS7Support>)activeImage imageWithRenderingMode:theMode];
-            }
+    }
+    if (activeImage != nil) {
+        if ([activeImage respondsToSelector:@selector(imageWithRenderingMode:)]) {
+            NSInteger theMode = activeIconOriginal ? UIImageRenderingModeAlwaysOriginal : UIImageRenderingModeAlwaysTemplate;
+            activeImage = [activeImage imageWithRenderingMode:theMode];
         }
-        
-        systemTab = NO;
-        ourItem = [[[UITabBarItem alloc] initWithTitle:title image:image selectedImage:activeImage] autorelease];
-        [ourItem setBadgeValue:badgeValue];
-        [rootController setTabBarItem:ourItem];
-        return;
     }
     
-	if (!systemTab)
-	{
-		ourItem = [rootController tabBarItem];
-		[ourItem setTitle:title];
-		[ourItem setImage:image];
-	}
+    systemTab = NO;
+    ourItem = [[[UITabBarItem alloc] initWithTitle:title image:image selectedImage:activeImage] autorelease];
 
-	if (ourItem == nil)
-	{
-		systemTab = NO;
-		ourItem = [[[UITabBarItem alloc] initWithTitle:title image:image tag:0] autorelease];
-		[rootController setTabBarItem:ourItem];
+    TiColor *titleColor = [TiUtils colorValue:[self valueForKey:@"titleColor"]];
+    if (titleColor != nil) {
+        [ourItem setTitleTextAttributes:[NSDictionary dictionaryWithObjectsAndKeys:[titleColor color], NSForegroundColorAttributeName, nil] forState:UIControlStateNormal];
+    }
+    TiColor *activeTitleColor = [TiUtils colorValue:[self valueForKey:@"activeTitleColor"]];
+    if (activeTitleColor != nil) {
+        [ourItem setTitleTextAttributes:[NSDictionary dictionaryWithObjectsAndKeys:[activeTitleColor color], NSForegroundColorAttributeName, nil] forState:UIControlStateSelected];
+    }
+    
+    if (iconInsets != nil) {
+        if(UIEdgeInsetsEqualToEdgeInsets([TiUtils contentInsets:iconInsets], [ourItem imageInsets]) == NO) {
+            [ourItem setImageInsets:[self calculateIconInsets:iconInsets]];
+        }
+    }
+    
+#if IS_XCODE_8
+	if (badgeColor != nil && [TiUtils isIOS10OrGreater]) {
+		[ourItem setBadgeColor:[[TiUtils colorValue:badgeColor] color]];
 	}
+#endif
+    
+    [ourItem setBadgeValue:badgeValue];
+    [rootController setTabBarItem:ourItem];
+}
 
-	if (activeImage != nil)
-	{
-		[ourItem setFinishedSelectedImage:activeImage withFinishedUnselectedImage:image];
-	}
-	
-	[ourItem setBadgeValue:badgeValue];
+-(UIEdgeInsets)calculateIconInsets:(id)value
+{
+    if ([value isKindOfClass:[NSDictionary class]])
+    {
+        NSDictionary *dict = (NSDictionary*)value;
+        CGFloat top = [TiUtils floatValue:@"top" properties:dict def:0];
+        CGFloat left = [TiUtils floatValue:@"left" properties:dict def:0];
+        return UIEdgeInsetsMake(top, left, -top, -left);
+    }
+    return UIEdgeInsetsMake(0,0,0,0);
 }
 
 -(void)setTitle:(id)title
@@ -589,11 +641,16 @@
 	[self updateTabBarItem];
 }
 
+-(void)setIconInsets:(id)args
+{
+    if ([args isKindOfClass:[NSDictionary class]]) {
+        [self replaceValue:args forKey:@"iconInsets" notification:NO];
+        [self updateTabBarItem];
+    }
+}
+
 -(void)setIconIsMask:(id)value
 {
-    if (![TiUtils isIOS7OrGreater]) {
-        return;
-    }
     [self replaceValue:value forKey:@"iconIsMask" notification:NO];
     BOOL newValue = ![TiUtils boolValue:value def:YES];
     if (newValue != iconOriginal) {
@@ -602,11 +659,20 @@
     }
 }
 
+-(void)setTitleColor:(id)value
+{
+    [self replaceValue:value forKey:@"titleColor" notification:NO];
+    [self updateTabBarItem];
+}
+
+-(void)setActiveTitleColor:(id)value
+{
+    [self replaceValue:value forKey:@"activeTitleColor" notification:NO];
+    [self updateTabBarItem];
+}
+
 -(void)setActiveIconIsMask:(id)value
 {
-    if (![TiUtils isIOS7OrGreater]) {
-        return;
-    }
     [self replaceValue:value forKey:@"activeIconIsMask" notification:NO];
     BOOL newValue = ![TiUtils boolValue:value def:YES];
     if (newValue != activeIconOriginal) {
@@ -654,7 +720,11 @@
 	[self updateTabBarItem];
 }
 
-
+-(void)setBadgeColor:(id)value
+{
+	[self replaceValue:value forKey:@"badgeColor" notification:NO];
+	[self updateTabBarItem];
+}
 
 -(void)willChangeSize
 {
@@ -711,7 +781,7 @@
 
 -(TiOrientationFlags)orientationFlags
 {
-	UIViewController * modalController = [controller modalViewController];
+	UIViewController * modalController = [controller presentedViewController];
 	if ([modalController conformsToProtocol:@protocol(TiOrientationController)])
 	{
 		return [(id<TiOrientationController>)modalController orientationFlags];

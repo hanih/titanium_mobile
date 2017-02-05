@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -13,14 +13,13 @@
 #import "TiViewProxy.h"
 #import "TiApp.h"
 #import "TiUITextWidget.h"
-
-#ifdef USE_TI_UIIOSATTRIBUTEDSTRING
-#import "TiUIiOSAttributedStringProxy.h"
+#ifdef USE_TI_UIATTRIBUTEDSTRING
+#import "TiUIAttributedStringProxy.h"
 #endif
 
 @implementation TiTextField
 
-@synthesize leftButtonPadding, rightButtonPadding, paddingLeft, paddingRight, becameResponder;
+@synthesize leftButtonPadding, rightButtonPadding, paddingLeft, paddingRight;
 
 -(void)configure
 {
@@ -32,7 +31,7 @@
 	paddingLeft = 0;
 	paddingRight = 0;
 	[super setLeftViewMode:UITextFieldViewModeAlways];
-	[super setRightViewMode:UITextFieldViewModeAlways];	
+	[super setRightViewMode:UITextFieldViewModeAlways];
 }
 
 -(void)dealloc
@@ -200,33 +199,19 @@
 	if ([super resignFirstResponder])
 	{
 		[self repaintMode];
-        if (becameResponder) {
-            becameResponder = NO;
-            [touchHandler makeRootViewFirstResponder];
-        }
-        return YES;
+		[touchHandler makeRootViewFirstResponder];
+		return YES;
 	}
 	return NO;
 }
 
 -(BOOL)becomeFirstResponder
 {
-    if (self.isEnabled) {
-        if ([super becomeFirstResponder])
-        {
-            becameResponder = YES;
-            [self repaintMode];
-            return YES;
-        }
+    if ([super becomeFirstResponder]) {
+        [self repaintMode];
+        return YES;
     }
     return NO;
-}
-
-
--(BOOL)isFirstResponder
-{
-	if (becameResponder) return YES;
-	return [super isFirstResponder];
 }
 
 -(void)setLeftView:(UIView*)value
@@ -274,11 +259,24 @@
 
 #pragma mark Internal
 
+#ifndef TI_USE_AUTOLAYOUT
 -(void)frameSizeChanged:(CGRect)frame bounds:(CGRect)bounds
 {
 	[TiUtils setView:textWidgetView positionRect:bounds];
     [super frameSizeChanged:frame bounds:bounds];
 }
+
+#endif
+
+
+#ifdef TI_USE_AUTOLAYOUT
+-(void)initializeTiLayoutView
+{
+    [super initializeTiLayoutView];
+    [self setDefaultHeight:TiDimensionAutoSize];
+    [self setDefaultWidth:TiDimensionAutoFill];
+}
+#endif
 
 - (void) dealloc
 {
@@ -287,16 +285,18 @@
 	[super dealloc];
 }
 
-
 -(UIView<UITextInputTraits>*)textWidgetView
 {
 	if (textWidgetView==nil)
 	{
-		textWidgetView = [[TiTextField alloc] initWithFrame:CGRectZero];
-		((TiTextField *)textWidgetView).delegate = self;
-		((TiTextField *)textWidgetView).text = @"";
-		((TiTextField *)textWidgetView).textAlignment = UITextAlignmentLeft;
-		((TiTextField *)textWidgetView).contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+		textWidgetView = [[TiTextField alloc] init];
+#ifdef TI_USE_AUTOLAYOUT
+		[textWidgetView setTranslatesAutoresizingMaskIntoConstraints:NO];
+#endif
+		((UITextField *)textWidgetView).delegate = self;
+		((UITextField *)textWidgetView).text = @"";
+		((UITextField *)textWidgetView).textAlignment = NSTextAlignmentLeft;
+		((UITextField *)textWidgetView).contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
 		[(TiTextField *)textWidgetView configure];
 		[(TiTextField *)textWidgetView setTouchHandler:self];
 		[self addSubview:textWidgetView];
@@ -305,48 +305,102 @@
 		NSNotificationCenter * theNC = [NSNotificationCenter defaultCenter];
 		[theNC addObserver:self selector:@selector(textFieldDidChange:) name:UITextFieldTextDidChangeNotification object:textWidgetView];
 	}
+  
+	// TIMOB-16100: Native issue that prevents the textfield to mutate the font-config
+	BOOL needsAdjustment = (![TiUtils isIOS10OrGreater] && ((UITextField *)textWidgetView).secureTextEntry);
+
+	if (needsAdjustment)
+	{
+		NSString *str = ((UITextField *)textWidgetView).text;
+		((UITextField *)textWidgetView).text = @"";
+		((UITextField *)textWidgetView).text = str;
+	}
+
 	return textWidgetView;
 }
 
 
 #pragma mark Public APIs
 
+-(void)setShowUndoRedoActions_:(id)value
+{
+    if(![TiUtils isIOS9OrGreater]){
+        return;
+    }
+
+    TiTextField* tv = (TiTextField*)[self textWidgetView];
+    
+    [[self proxy] replaceValue:value forKey:@"showUndoRedoActions" notification:NO];
+
+    if([TiUtils boolValue:value] == YES) {
+        tv.inputAssistantItem.leadingBarButtonGroups = self.inputAssistantItem.leadingBarButtonGroups;
+        tv.inputAssistantItem.trailingBarButtonGroups = self.inputAssistantItem.trailingBarButtonGroups;
+    } else {
+        tv.inputAssistantItem.leadingBarButtonGroups = @[];
+        tv.inputAssistantItem.trailingBarButtonGroups = @[];
+    }
+}
+
+-(void)setPadding_:(id)args
+{
+    id _paddingLeft = [args objectForKey:@"left"];
+    id _paddingRight = [args objectForKey:@"right"];
+    
+    TiTextField* tv = (TiTextField*)[self textWidgetView];
+    
+    if (_paddingLeft) {
+        tv.paddingLeft = [TiUtils floatValue:_paddingLeft];
+    }
+    
+    if (_paddingRight) {
+        tv.paddingRight = [TiUtils floatValue:_paddingRight];
+    }
+}
+
 -(void)setPaddingLeft_:(id)value
 {
-	[self textWidgetView].paddingLeft = [TiUtils floatValue:value];
+    DEPRECATED_REPLACED(@"UI.TextField.paddingLeft", @"6.1.0", @"UI.TextField.padding.left");
+
+    TiTextField* tv = (TiTextField*)[self textWidgetView];
+    tv.paddingLeft = [TiUtils floatValue:value];
 }
 
 -(void)setLeftButtonPadding_:(id)value
 {
-	[self textWidgetView].leftButtonPadding = [TiUtils floatValue:value];
+    TiTextField* tv = (TiTextField*)[self textWidgetView];
+    tv.leftButtonPadding = [TiUtils floatValue:value];
 }
 
 -(void)setPaddingRight_:(id)value
 {
-	[self textWidgetView].paddingRight = [TiUtils floatValue:value];
+    DEPRECATED_REPLACED(@"UI.TextField.paddingRight", @"6.1.0", @"UI.TextField.padding.right");
+    
+    TiTextField* tv = (TiTextField*)[self textWidgetView];
+    tv.paddingRight = [TiUtils floatValue:value];
 }
 
 -(void)setRightButtonPadding_:(id)value
 {
-	[self textWidgetView].rightButtonPadding = [TiUtils floatValue:value];
+    TiTextField* tv = (TiTextField*)[self textWidgetView];
+    tv.rightButtonPadding = [TiUtils floatValue:value];
 }
 
 -(void)setEditable_:(id)value
 {
     BOOL _trulyEnabled = ([TiUtils boolValue:value def:YES] && [TiUtils boolValue:[[self proxy] valueForUndefinedKey:@"enabled"] def:YES]);
-    [[self textWidgetView] setEnabled:_trulyEnabled];
+    [(TiTextField*)[self textWidgetView] setEnabled:_trulyEnabled];
 }
 
 -(void)setEnabled_:(id)value
 {
     BOOL _trulyEnabled = ([TiUtils boolValue:value def:YES] && [TiUtils boolValue:[[self proxy] valueForUndefinedKey:@"editable"] def:YES]);
-    [[self textWidgetView] setEnabled:_trulyEnabled];
+    [(TiTextField*)[self textWidgetView] setEnabled:_trulyEnabled];
 }
 
 
 -(void)setBackgroundImage_:(id)image
 {
-	UITextField *tf = [self textWidgetView];
+	TiTextField *tf = (TiTextField*)[self textWidgetView];
 	
 	if (image!=nil && tf.borderStyle == UITextBorderStyleRoundedRect)
 	{
@@ -360,20 +414,42 @@
 
 -(void)setBackgroundDisabledImage_:(id)image
 {
-	[[self textWidgetView] setDisabledBackground:[self loadImage:image]];
+	[(TiTextField*)[self textWidgetView] setDisabledBackground:[self loadImage:image]];
+}
+
+- (void)setBackgroundColor_:(id)value
+{
+	[[self proxy] replaceValue:value forKey:@"backgroundColor" notification:NO];
+	[(TiTextField*)[self textWidgetView] setBackgroundColor:[[TiUtils colorValue:value] _color]];
 }
 
 -(void)setHintText_:(id)value
 {
-	[[self textWidgetView] setPlaceholder:[TiUtils stringValue:value]];
+    [(TiTextField*)[self textWidgetView] setPlaceholder:[TiUtils stringValue:value]];
+    
+    if ([[self proxy] valueForUndefinedKey:@"hintTextColor"]) {
+        [self setHintTextColor_:[[self proxy] valueForUndefinedKey:@"hintTextColor"]];
+    }
+}
+
+-(void)setHintTextColor_:(id)value
+{
+    id hintText = [[self proxy] valueForUndefinedKey:@"hintText"];
+    
+    if (!hintText) {
+        hintText = @"";
+    }
+    NSAttributedString *placeHolder = [[NSAttributedString alloc] initWithString:[TiUtils stringValue:hintText] attributes:@{NSForegroundColorAttributeName:[[TiUtils colorValue:value] _color]}];
+    [(TiTextField*)[self textWidgetView] setAttributedPlaceholder:placeHolder];
+    RELEASE_TO_NIL(placeHolder);
 }
 
 -(void)setAttributedHintText_:(id)value
 {
-#ifdef USE_TI_UIIOSATTRIBUTEDSTRING
-    ENSURE_SINGLE_ARG(value,TiUIiOSAttributedStringProxy);
-    [[self proxy] replaceValue:value forKey:@"attributedHintText" notification:NO];
-    [[self textWidgetView] setAttributedPlaceholder:[value attributedString]];
+#ifdef USE_TI_UIATTRIBUTEDSTRING
+	ENSURE_SINGLE_ARG(value,TiUIAttributedStringProxy);
+	[[self proxy] replaceValue:value forKey:@"attributedHintText" notification:NO];
+	[(TiTextField*)[self textWidgetView] setAttributedPlaceholder:[value attributedString]];
 #endif
 }
 
@@ -381,28 +457,30 @@
 {
     CGFloat newSize = [TiUtils floatValue:value];
     if (newSize < 4) {
-        [[self textWidgetView] setAdjustsFontSizeToFitWidth:NO];
-        [[self textWidgetView] setMinimumFontSize:0.0];
+        [(TiTextField*)[self textWidgetView] setAdjustsFontSizeToFitWidth:NO];
+        [(TiTextField*)[self textWidgetView] setMinimumFontSize:0.0];
     }
     else {
-        [[self textWidgetView] setAdjustsFontSizeToFitWidth:YES];
-        [[self textWidgetView] setMinimumFontSize:newSize];
+        [(TiTextField*)[self textWidgetView] setAdjustsFontSizeToFitWidth:YES];
+        [(TiTextField*)[self textWidgetView] setMinimumFontSize:newSize];
     }
 }
 
 -(void)setClearOnEdit_:(id)value
 {
-	[[self textWidgetView] setClearsOnBeginEditing:[TiUtils boolValue:value]];
+	[(TiTextField*)[self textWidgetView] setClearsOnBeginEditing:[TiUtils boolValue:value]];
 }
 
 -(void)setBorderStyle_:(id)value
 {
-	[[self textWidgetView] setBorderStyle:[TiUtils intValue:value]];
+	TiThreadPerformOnMainThread(^{
+		[(TiTextField*)[self textWidgetView] setBorderStyle:[TiUtils intValue:value]];
+	}, NO);
 }
 
 -(void)setClearButtonMode_:(id)value
 {
-	[[self textWidgetView] setClearButtonMode:[TiUtils intValue:value]];
+	[(TiTextField*)[self textWidgetView] setClearButtonMode:[TiUtils intValue:value]];
 }
 
 //TODO: rename
@@ -413,7 +491,7 @@
 	{
 		TiViewProxy *vp = (TiViewProxy*)value;
 		TiUIView *leftview = [vp view];
-		[[self textWidgetView] setLeftView:leftview];
+		[(TiTextField*)[self textWidgetView] setLeftView:leftview];
 	}
 	else
 	{
@@ -423,7 +501,7 @@
 
 -(void)setLeftButtonMode_:(id)value
 {
-	[[self textWidgetView] setLeftViewMode:[TiUtils intValue:value]];
+	[(TiTextField*)[self textWidgetView] setLeftViewMode:[TiUtils intValue:value]];
 }
 
 -(void)setRightButton_:(id)value
@@ -431,7 +509,7 @@
 	if ([value isKindOfClass:[TiViewProxy class]])
 	{
 		TiViewProxy *vp = (TiViewProxy*)value;
-		[[self textWidgetView] setRightView:[vp view]];
+		[(TiTextField*)[self textWidgetView] setRightView:[vp view]];
 	}
 	else
 	{
@@ -441,7 +519,7 @@
 
 -(void)setRightButtonMode_:(id)value
 {
-	[[self textWidgetView] setRightViewMode:[TiUtils intValue:value]];
+	[(TiTextField*)[self textWidgetView] setRightViewMode:[TiUtils intValue:value]];
 }
 
 -(void)setVerticalAlign_:(id)value
@@ -450,20 +528,20 @@
 	{
 		if ([value isEqualToString:@"top"])
 		{
-			[[self textWidgetView] setContentVerticalAlignment:UIControlContentVerticalAlignmentTop];
+			[(TiTextField*)[self textWidgetView] setContentVerticalAlignment:UIControlContentVerticalAlignmentTop];
 		}
 		else if ([value isEqualToString:@"middle"] || [value isEqualToString:@"center"])
 		{
-			[[self textWidgetView] setContentVerticalAlignment:UIControlContentVerticalAlignmentCenter];
+			[(TiTextField*)[self textWidgetView] setContentVerticalAlignment:UIControlContentVerticalAlignmentCenter];
 		}
 		else 
 		{
-			[[self textWidgetView] setContentVerticalAlignment:UIControlContentVerticalAlignmentBottom];
+			[(TiTextField*)[self textWidgetView] setContentVerticalAlignment:UIControlContentVerticalAlignmentBottom];
 		}
 	}
 	else
 	{
-		[[self textWidgetView] setContentVerticalAlignment:[TiUtils intValue:value]];
+		[(TiTextField*)[self textWidgetView] setContentVerticalAlignment:[TiUtils intValue:value]];
 	}
 }
 
@@ -471,7 +549,7 @@
 
 -(BOOL)hasText
 {
-	UITextField *f = [self textWidgetView];
+	TiTextField *f = (TiTextField*)[self textWidgetView];
 	return [[f text] length] > 0;
 }
 
@@ -501,6 +579,13 @@
 
 - (BOOL)textField:(UITextField *)tf shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string
 {
+    //sanity check for undo bug. Does nothing if undo pressed for certain keyboardsTypes and under some conditions.
+    if (range.length + range.location > [[tf text] length]) {
+        return NO;
+    }
+    
+    [self processKeyPressed:string];
+    
     NSString *curText = [[tf text] stringByReplacingCharactersInRange:range withString:string];
    
     if ( (maxLength > -1) && ([curText length] > maxLength) ) {
@@ -513,6 +598,8 @@
 - (void)textFieldDidEndEditing:(UITextField *)tf
 {
 	[self textWidget:tf didBlurWithText:[tf text]];
+	//TIMOB-18365. Value not updated when autocorrect is up and return is pressed
+	[self textFieldDidChange:nil];
 }
 
 - (void)textFieldDidChange:(NSNotification *)notification

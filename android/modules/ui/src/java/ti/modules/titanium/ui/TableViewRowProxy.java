@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -14,7 +14,6 @@ import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiApplication;
 import org.appcelerator.titanium.TiC;
-import org.appcelerator.titanium.TiContext;
 import org.appcelerator.titanium.proxy.TiViewProxy;
 import org.appcelerator.titanium.view.TiUIView;
 
@@ -49,11 +48,10 @@ public class TableViewRowProxy extends TiViewProxy
 	public TableViewRowProxy()
 	{
 		super();
-	}
 
-	public TableViewRowProxy(TiContext tiContext)
-	{
-		this();
+		// TIMOB-24058: Prevent setOnClickListener() from being set allowing
+		// backgroundSelectedColor and backgroundSelectedImage to function
+		defaultValues.put(TiC.PROPERTY_TOUCH_ENABLED, false);
 	}
 
 	@Override
@@ -113,17 +111,34 @@ public class TableViewRowProxy extends TiViewProxy
 		return controls.toArray(new TiViewProxy[controls.size()]);
 	}
 
-	public void add(TiViewProxy control)
-	{
-		if (controls == null) {
-			controls = new ArrayList<TiViewProxy>();
+	@Override
+	public void add(Object args) {
+		if (args == null) {
+			Log.e(TAG, "Add called with a null child");
+			return;
 		}
-		controls.add(control);
-		control.setParent(this);
-		if (tableViewItem != null) {
-			Message message = getMainHandler().obtainMessage(MSG_SET_DATA);
-			// Message msg = getUIHandler().obtainMessage(MSG_SET_DATA);
-			message.sendToTarget();
+		if (args instanceof Object[]) {
+			for (Object arg : (Object[]) args) {
+				if (arg instanceof TiViewProxy) {
+					add((TiViewProxy) arg);
+				} else {
+					Log.w(TAG, "add() unsupported array object: " + arg.getClass().getSimpleName());
+				}
+			}
+		} else if (args instanceof TiViewProxy) {
+			if (controls == null) {
+				controls = new ArrayList<TiViewProxy>();
+			}
+			TiViewProxy view = (TiViewProxy) args;
+			controls.add(view);
+			view.setParent(this);
+			if (tableViewItem != null) {
+				Message message = getMainHandler().obtainMessage(MSG_SET_DATA);
+				// Message msg = getUIHandler().obtainMessage(MSG_SET_DATA);
+				message.sendToTarget();
+			}
+		} else {
+			Log.w(TAG, "add() unsupported argument type: " + args.getClass().getSimpleName());
 		}
 	}
 
@@ -156,15 +171,14 @@ public class TableViewRowProxy extends TiViewProxy
 	}
 
 	@Override
-	public void setProperty(String name, Object value, boolean fireChange)
+	public void setProperty(String name, Object value)
 	{
-		super.setProperty(name, value, fireChange);
+		super.setProperty(name, value);
 		if (tableViewItem != null) {
 			if (TiApplication.isUIThread()) {
 				tableViewItem.setRowData(this);
 			} else {
 				Message message = getMainHandler().obtainMessage(MSG_SET_DATA);
-				// Message msg = getUIHandler().obtainMessage(MSG_SET_DATA);
 				message.sendToTarget();
 			}
 		}

@@ -24,8 +24,11 @@
 	TiDimension topCap;
 	BOOL configuredChildren;
 	int dirtyRowFlags;
-	BOOL subviewIsAnimating;
-	UIView * rowContainerView;
+#ifdef TI_USE_AUTOLAYOUT
+    TiLayoutView * rowContainerView;
+#else
+    UIView * rowContainerView;
+#endif
 	BOOL modifyingRow;
 	BOOL attaching;
 	NSInteger row;

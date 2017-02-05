@@ -8,11 +8,10 @@
 
 #import "TiBindingEvent.h"
 #include <libkern/OSAtomic.h>
-#include "Ti.h"
+#include "TiToJS.h"
 #import "KrollObject.h"
 #import "TiBindingTiValue.h"
 #import "TiBindingRunLoop.h"
-#import "TiBase.h"
 #import "TiExceptionHandler.h"
 #import "TiUtils.h"
 
@@ -48,7 +47,7 @@ struct TiBindingEventOpaque{
 	bool bubbles;	//Immutable
 	bool cancelBubble;	//Mutable, set to true
 	bool reportError;		//Immutable
-	int errorCode;			//Immutable
+	NSInteger errorCode;			//Immutable
 //Objective C version
 	TiProxy * targetProxy;	//Immutable in-event, mutable for bubbling.
 	TiProxy * sourceProxy;	//Immutable
@@ -125,7 +124,7 @@ TiProxy * TiBindingEventNextBubbleTargetProxy(TiBindingEvent event, TiProxy * cu
         //TIMOB-11691. Ensure that tableviewrowproxy modifies the event object before passing it along.
         if ([currentTarget respondsToSelector:@selector(createEventObject:)]) {
             NSDictionary *curPayload = event->payloadDictionary;
-            NSDictionary *modifiedPayload = [currentTarget createEventObject:curPayload];
+            NSDictionary *modifiedPayload = [currentTarget performSelector:@selector(createEventObject:) withObject:curPayload];
             [event->payloadDictionary release];
             event->payloadDictionary = [modifiedPayload copy];
         }
@@ -133,7 +132,7 @@ TiProxy * TiBindingEventNextBubbleTargetProxy(TiBindingEvent event, TiProxy * cu
 	return currentTarget;
 }
 
-void TiBindingEventSetErrorCode(TiBindingEvent event, int code)
+void TiBindingEventSetErrorCode(TiBindingEvent event, NSInteger code)
 {
 	event->reportError = true;
 	event->errorCode = code;
@@ -161,7 +160,6 @@ void TiBindingEventClearError(TiBindingEvent event)
 {
 	event->reportError = false;
 }
-
 
 void TiBindingEventFire(TiBindingEvent event)
 {
@@ -272,14 +270,19 @@ void TiBindingEventProcess(TiBindingRunLoop runloop, void * payload)
 			{
 				continue;
 			}
-			TiValueRef exception = NULL;
-			TiObjectCallAsFunction(context, (TiObjectRef)currentCallback, (TiObjectRef)eventTargetRef, 1, (TiValueRef*)&eventObjectRef,&exception);
-			if (exception!=NULL)
-			{
-				id excm = TiBindingTiValueToNSObject(context, exception);
-				[[TiExceptionHandler defaultExceptionHandler] reportScriptError:[TiUtils scriptErrorValue:excm]];
-			}
-			
+#ifndef TI_USE_KROLL_THREAD
+            TiThreadPerformOnMainThread( ^{
+#endif
+                TiValueRef exception = NULL;
+                TiObjectCallAsFunction(context, (TiObjectRef)currentCallback, (TiObjectRef)eventTargetRef, 1, (TiValueRef*)&eventObjectRef,&exception);
+                if (exception!=NULL)
+                {
+                    id excm = TiBindingTiValueToNSObject(context, exception);
+                    [[TiExceptionHandler defaultExceptionHandler] reportScriptError:[TiUtils scriptErrorValue:excm]];
+                }
+#ifndef TI_USE_KROLL_THREAD
+            }, [NSThread isMainThread]);
+#endif
 			// Note cancel bubble
 			cancelBubbleValue = TiObjectGetProperty(context, eventObjectRef, jsEventCancelBubbleStringRef, NULL);
 			if(TiValueToBoolean(context,cancelBubbleValue)){

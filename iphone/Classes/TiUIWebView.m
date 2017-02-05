@@ -41,6 +41,7 @@ static NSString * const kContentTextEncoding = @"kContentTextEncoding";
 static NSString * const kContentMimeType = @"kContentMimeType";
 static NSString * const kContentInjection = @"kContentInjection";
 
+static unsigned long localId = 0;
 
 NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 {
@@ -66,6 +67,15 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 @implementation TiUIWebView
 @synthesize reloadData, reloadDataProperties;
 
+#ifdef TI_USE_AUTOLAYOUT
+-(void)initializeTiLayoutView
+{
+    [super initializeTiLayoutView];
+    [self setDefaultHeight:TiDimensionAutoFill];
+    [self setDefaultWidth:TiDimensionAutoFill];
+}
+#endif
+
 -(void)dealloc
 {
 	if (webview!=nil)
@@ -90,6 +100,8 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	RELEASE_TO_NIL(reloadData);
 	RELEASE_TO_NIL(reloadDataProperties);
 	RELEASE_TO_NIL(lastValidLoad);
+	RELEASE_TO_NIL(blacklistedURLs);
+	RELEASE_TO_NIL(insecureConnection);
 	[super dealloc];
 }
 
@@ -144,6 +156,8 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 		[self addSubview:webview];
 
 		BOOL hideLoadIndicator = [TiUtils boolValue:[self.proxy valueForKey:@"hideLoadIndicator"] def:NO];
+		ignoreSslError = [TiUtils boolValue:[[self proxy] valueForKey:@"ignoreSslError"] def:NO];
+		isAuthenticated = NO;
 		
 		// only show the loading indicator if it's a remote URL and 'hideLoadIndicator' property is not set.
 		if (![[self class] isLocalURL:url] && !hideLoadIndicator)
@@ -165,6 +179,11 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 			[self addSubview:spinner];
 			[spinner sizeToFit];
 			[spinner startAnimating];
+		}
+
+		if ([[NSUserDefaults standardUserDefaults] objectForKey:@"DefaultUserAgent"] == nil) {
+			NSString *defaultUserAgent = [webview stringByEvaluatingJavaScriptFromString:@"navigator.userAgent"];
+			[[NSUserDefaults standardUserDefaults] setObject:defaultUserAgent forKey:@"DefaultUserAgent"];
 		}
 	}
 	return webview;
@@ -213,7 +232,7 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 - (NSString *)titaniumInjection
 {
 	if (pageToken==nil) {
-		pageToken = [[NSString stringWithFormat:@"%d",[self hash]] retain];
+		pageToken = [[NSString stringWithFormat:@"%lu",(unsigned long)[self hash]] retain];
 		[(TiUIWebViewProxy*)self.proxy setPageToken:pageToken];
 	}
 	NSMutableString *html = [[[NSMutableString alloc] init] autorelease];
@@ -285,6 +304,8 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:requestURL];
 	[NSURLProtocol setProperty:textEncodingName forKey:kContentTextEncoding inRequest:request];
 	[NSURLProtocol setProperty:mimeType forKey:kContentMimeType inRequest:request];
+    
+	[request setValue:[NSString stringWithFormat:@"%lu", (localId++)] forHTTPHeaderField:@"X-Titanium-Local-Id"];
 	
 	[self loadURLRequest:request];
 	if (scalingOverride==NO) {
@@ -322,6 +343,15 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	return url;
 }
 
+-(void)setAllowsLinkPreview_:(id)value
+{
+    if ([TiUtils isIOS9OrGreater] == NO) {
+        return;
+    }
+    ENSURE_TYPE(value, NSNumber);
+    [webview setAllowsLinkPreview:[TiUtils boolValue:value]];
+}
+
 - (void)reload
 {
     RELEASE_TO_NIL(lastValidLoad);
@@ -352,7 +382,7 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	[webview goForward];
 }
 
--(BOOL)isLoading
+-(BOOL)loading
 {
 	return [webview isLoading];
 }
@@ -365,6 +395,15 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 -(BOOL)canGoForward
 {
 	return [webview canGoForward];
+}
+
+-(void)setIgnoreSslError_:(id)value
+{
+    ENSURE_TYPE(value, NSNumber);
+    
+    ignoreSslError = [TiUtils boolValue:value def:NO];
+    isAuthenticated = NO;
+    [[self proxy] replaceValue:value forKey:@"ignoreSslError" notification:NO];
 }
 
 -(void)setBackgroundColor_:(id)color
@@ -418,7 +457,9 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 			case TiBlobTypeData:
 			{
 				[self ensureLocalProtocolHandler];
-				[[self webview] loadData:[blob data] MIMEType:[blob mimeType] textEncodingName:@"utf-8" baseURL:nil];
+				// Empty NSURL since nil is not accepted here
+				NSURL *emptyURL = [[NSURL new] autorelease];
+				[[self webview] loadData:[blob data] MIMEType:[blob mimeType] textEncodingName:@"utf-8" baseURL:emptyURL];
 				if (scalingOverride==NO)
 				{
 					[[self webview] setScalesPageToFit:YES];
@@ -472,6 +513,7 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 - (void)setUrl_:(id)args
 {
 	ignoreNextRequest = YES;
+	isAuthenticated = NO;
 	[self setReloadData:args];
 	[self setReloadDataProperties:nil];
 	reloadMethod = @selector(setUrl_:);
@@ -481,7 +523,11 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	ENSURE_SINGLE_ARG(args,NSString);
 	
 	url = [[TiUtils toURL:args proxy:(TiProxy*)self.proxy] retain];
-
+	
+	if (insecureConnection) {
+		[insecureConnection cancel];
+	}
+	
 	[self stopLoading];
 	
 	if ([[self class] isLocalURL:url]) {
@@ -495,10 +541,37 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	}
 }
 
+-(void)setBlacklistedURLs_:(id)args
+{
+    ENSURE_TYPE(args, NSArray);
+    
+    if (blacklistedURLs) {
+        RELEASE_TO_NIL(blacklistedURLs);
+    }
+    
+    for (id blacklistedURL in args) {
+        ENSURE_TYPE(blacklistedURL, NSString);
+    }
+    
+    blacklistedURLs = [args copy];
+}
+
 -(void)setHandlePlatformUrl_:(id)arg
 {
     [[self proxy] replaceValue:arg forKey:@"handlePlatformUrl" notification:NO];
     willHandleUrl = [TiUtils boolValue:arg];
+}
+
+-(void)setUserAgent_:(id)value
+{
+    ENSURE_TYPE_OR_NIL(value, NSString);
+    
+    if (value == nil || [value isEqualToString:@""]) {
+        value = [[NSUserDefaults standardUserDefaults] objectForKey:@"DefaultUserAgent"];
+    }
+
+    [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"UserAgent": value}];
+    [[self proxy] replaceValue:value forKey:@"userAgent" notification:NO];
 }
 
 - (void)ensureLocalProtocolHandler
@@ -652,11 +725,60 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
     return ret;
 }
 
+- (void)setKeyboardDisplayRequiresUserAction_:(id)value
+{
+    ENSURE_TYPE(value, NSNumber);
+    [[self proxy] replaceValue:value forKey:@"keyboardDisplayRequiresUserAction" notification:NO];
+    
+    [[self webview] setKeyboardDisplayRequiresUserAction:[TiUtils boolValue:value def:YES]];
+}
+
 #pragma mark WebView Delegate
 
 - (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType
 {
+	NSDictionary *newHeaders = [[self proxy] valueForKey:@"requestHeaders"];
+	BOOL allHeadersIncluded = NO;
+	int requiredHeaders = (int)[newHeaders count];
+    
+	if (newHeaders) {
+		for (NSString* existingHeader in [[request allHTTPHeaderFields] allKeys]) {
+			for (NSString* newHeader in [newHeaders allKeys]) {
+				if ([[existingHeader lowercaseString] isEqualToString:[newHeader lowercaseString]]) {
+					requiredHeaders--;
+				}
+			}
+		}
+
+		if (requiredHeaders > 0) {
+			NSMutableURLRequest* newRequest = [request mutableCopy];
+			for (NSString* newHeader in [newHeaders allKeys]) {
+				[newRequest addValue:[newHeaders valueForKey:newHeader] forHTTPHeaderField:newHeader];
+			}
+			[self loadURLRequest:newRequest];
+			[newRequest release];
+
+			return NO;
+		}
+	}
+
 	NSURL * newUrl = [request URL];
+    
+	if (blacklistedURLs && blacklistedURLs.count > 0) {
+		NSString *urlAbsoluteString = [newUrl absoluteString];
+        
+		for (NSString *blackListedUrl in blacklistedURLs) {
+			if ([urlAbsoluteString rangeOfString:blackListedUrl options:NSCaseInsensitiveSearch].location != NSNotFound) {
+				if ([self.proxy _hasListeners:@"onStopBlacklistedUrl"]) {
+					NSDictionary *eventDict = [NSDictionary dictionaryWithObjectsAndKeys:urlAbsoluteString,@"url",@"Webview did not load blacklisted url.", @"messsage", nil];
+					[self.proxy fireEvent:@"onStopBlacklistedUrl" withObject:eventDict];
+				}
+		
+				[self stopSpinner];        
+				return NO;
+			}
+		}
+	}
 
 	if ([self.proxy _hasListeners:@"beforeload"])
 	{
@@ -666,6 +788,16 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 
 	if (navigationType != UIWebViewNavigationTypeOther) {
 		RELEASE_TO_NIL(lastValidLoad);
+	}
+    
+	// Handle invalid SSL certificate
+	if (ignoreSslError && !isAuthenticated) {
+		RELEASE_TO_NIL(insecureConnection);
+		isAuthenticated = NO;
+		insecureConnection = [[NSURLConnection alloc] initWithRequest:request delegate:self];
+		[insecureConnection start];
+
+		return NO;
 	}
 
 	NSString * scheme = [[newUrl scheme] lowercaseString];
@@ -688,7 +820,7 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 		}
 		return YES;
 	}
-	
+
 	UIApplication * uiApp = [UIApplication sharedApplication];
 	
 	if ([uiApp canOpenURL:newUrl] && !willHandleUrl)
@@ -706,20 +838,17 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 }
 
 - (void)webViewDidFinishLoad:(UIWebView *)webView
-{
-    if (spinner!=nil) {
-        [UIView beginAnimations:@"webspiny" context:nil];
-        [UIView setAnimationDuration:0.3];
-        [spinner removeFromSuperview];
-        [UIView commitAnimations];
-        [spinner autorelease];
-        spinner = nil;
-    }
+{    
+    [self stopSpinner];
+
     [url release];
     url = [[[webview request] URL] retain];
     NSString* urlAbs = [url absoluteString];
-    [[self proxy] replaceValue:urlAbs forKey:@"url" notification:NO];
-	
+    NSString* appPath = [[[NSBundle mainBundle] resourceURL] absoluteString];
+    if (![urlAbs isEqualToString: appPath]) {
+        [[self proxy] replaceValue:urlAbs forKey:@"url" notification:NO];
+    }
+    
     if ([self.proxy _hasListeners:@"load"]) {
         if (![urlAbs isEqualToString:lastValidLoad]) {
             NSDictionary *event = url == nil ? nil : [NSDictionary dictionaryWithObject:[self url] forKey:@"url"];
@@ -728,6 +857,15 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
             lastValidLoad = [urlAbs retain];
         }
     }
+    
+    // Disable the context menu when selecting a range of text
+    BOOL disableContextMenu = [TiUtils boolValue:[[self proxy] valueForKey:@"disableContextMenu"] def:NO];
+    if (disableContextMenu) {
+        [webView stringByEvaluatingJavaScriptFromString:@"document.documentElement.style.webkitUserSelect='none';"];
+        [webView stringByEvaluatingJavaScriptFromString:@"document.documentElement.style.webkitTouchCallout='none';"];
+        [webView stringByEvaluatingJavaScriptFromString:@"window.getSelection().removeAllRanges();"];
+    }
+    
     [webView setNeedsDisplay];
     ignoreNextRequest = NO;
     TiUIWebViewProxy * ourProxy = (TiUIWebViewProxy *)[self proxy];
@@ -736,6 +874,10 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 
 - (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error
 {
+	// Ignore "Frame Load Interrupted" errors. Seen after opening url-schemes that
+	// are already handled by the `Ti.App.iOS.handleurl` event
+	if (error.code == 102 && [error.domain isEqual:@"WebKitErrorDomain"]) return;
+    
 	NSString *offendingUrl = [self url];
 
 	if ([[error domain] isEqual:NSURLErrorDomain])
@@ -780,6 +922,33 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 	}
 }
 
+#pragma mark NSURLConnection Delegates (used for the "ignoreSslError" property)
+
+- (void)connection:(NSURLConnection *)connection didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge;
+{
+    if ([challenge previousFailureCount] == 0) {
+        isAuthenticated = YES;
+        
+        [[challenge sender] useCredential:[NSURLCredential credentialForTrust:[[challenge protectionSpace] serverTrust]]
+               forAuthenticationChallenge:challenge];
+    } else {
+        [[challenge sender] cancelAuthenticationChallenge:challenge];
+    }
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response;
+{
+    isAuthenticated = YES;
+
+    [webview loadRequest:[NSURLRequest requestWithURL:url]];
+    [insecureConnection cancel];
+}
+
+- (BOOL)connection:(NSURLConnection *)connection canAuthenticateAgainstProtectionSpace:(NSURLProtectionSpace *)protectionSpace
+{
+    return [[protectionSpace authenticationMethod] isEqualToString:NSURLAuthenticationMethodServerTrust];
+}
+
 #pragma mark TiEvaluator
 
 - (void)evalFile:(NSString*)path
@@ -798,14 +967,29 @@ NSString *HTMLTextEncodingNameForStringEncoding(NSStringEncoding encoding)
 
 - (void)fireEvent:(id)listener withObject:(id)obj remove:(BOOL)yn thisObject:(id)thisObject_
 {
-	// don't bother firing an app event to the webview if we don't have a webview yet created
-	if (webview!=nil)
-	{
-		NSDictionary *event = (NSDictionary*)obj;
-		NSString *name = [event objectForKey:@"type"];
-		NSString *js = [NSString stringWithFormat:@"Ti.App._dispatchEvent('%@',%@,%@);",name,listener,[SBJSON stringify:event]];
-		[webview stringByEvaluatingJavaScriptFromString:js];
-	}
+    // don't bother firing an app event to the webview if we don't have a webview yet created
+    if (webview!=nil)
+    {
+        NSDictionary *event = (NSDictionary*)obj;
+        NSString *name = [event objectForKey:@"type"];
+        NSString *js = [NSString stringWithFormat:@"Ti.App._dispatchEvent('%@',%@,%@);",name,listener,[SBJSON stringify:event]];
+        // Not waiting for JS execution since this can cause deadlock on main queue.
+        [webview performSelectorOnMainThread:@selector(stringByEvaluatingJavaScriptFromString:)
+                                  withObject:js
+                               waitUntilDone:NO];
+    }
+}
+
+- (void)stopSpinner
+{
+    if (spinner != nil) {
+        [UIView beginAnimations:@"webspiny" context:nil];
+        [UIView setAnimationDuration:0.3];
+        [spinner removeFromSuperview];
+        [UIView commitAnimations];
+        [spinner autorelease];
+        spinner = nil;
+    }
 }
 
 @end

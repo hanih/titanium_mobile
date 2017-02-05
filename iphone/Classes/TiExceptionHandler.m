@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -57,6 +57,9 @@ static NSUncaughtExceptionHandler *prevUncaughtExceptionHandler = NULL;
 - (void)showScriptError:(TiScriptError *)error
 {
 	[[TiApp app] showModalError:[error description]];
+	[[NSNotificationCenter defaultCenter] postNotificationName:kTiErrorNotification
+	                                                    object:self
+	                                                  userInfo:error.dictionaryValue];
 }
 
 #pragma mark - TiExceptionHandlerDelegate
@@ -93,16 +96,22 @@ static NSUncaughtExceptionHandler *prevUncaughtExceptionHandler = NULL;
 
 - (id)initWithDictionary:(NSDictionary *)dictionary
 {
-	NSString *message = [[dictionary objectForKey:@"message"] description];
-	NSString *sourceURL = [[dictionary objectForKey:@"sourceURL"] description];
-	NSInteger lineNo = [[dictionary objectForKey:@"line"] integerValue];
+    NSString *message = [[dictionary objectForKey:@"message"] description];
+    if (message == nil) {
+        message = [[dictionary objectForKey:@"nativeReason"] description];
+    }
+    NSString *sourceURL = [[dictionary objectForKey:@"sourceURL"] description];
+    NSInteger lineNo = [[dictionary objectForKey:@"line"] integerValue];
 
-	self = [self initWithMessage:message sourceURL:sourceURL lineNo:lineNo];
-	if (self) {
-		_backtrace = [[[dictionary objectForKey:@"backtrace"] description] copy];
-		_dictionaryValue = [dictionary copy];
-	}
-	return self;
+    self = [self initWithMessage:message sourceURL:sourceURL lineNo:lineNo];
+    if (self) {
+        _backtrace = [[[dictionary objectForKey:@"backtrace"] description] copy];
+        if (_backtrace == nil) {
+            _backtrace = [[[dictionary objectForKey:@"stack"] description] copy];
+        }
+        _dictionaryValue = [dictionary copy];
+    }
+    return self;
 }
 
 - (void)dealloc
@@ -117,7 +126,7 @@ static NSUncaughtExceptionHandler *prevUncaughtExceptionHandler = NULL;
 - (NSString *)description
 {
 	if (self.sourceURL != nil) {
-		return [NSString stringWithFormat:@"%@ at %@ (line %d)", self.message,[self.sourceURL lastPathComponent], self.lineNo];
+		return [NSString stringWithFormat:@"%@ at %@ (line %ld)", self.message,[self.sourceURL lastPathComponent], (long)self.lineNo];
 	} else {
 		return [NSString stringWithFormat:@"%@", self.message];
 	}
@@ -145,7 +154,7 @@ static void TiUncaughtExceptionHandler(NSException *exception)
 	insideException = YES;
 	
     NSArray *callStackArray = [exception callStackReturnAddresses];
-    int frameCount = [callStackArray count];
+    int frameCount = (int)[callStackArray count];
     void *backtraceFrames[frameCount];
 	
     for (int i = 0; i < frameCount; ++i) {
@@ -161,7 +170,7 @@ static void TiUncaughtExceptionHandler(NSException *exception)
 		free(frameStrings);
 	}
 	
-	[[TiExceptionHandler defaultExceptionHandler] reportException:exception withStackTrace:[stack copy]];
+	[[TiExceptionHandler defaultExceptionHandler] reportException:exception withStackTrace:[[stack copy] autorelease]];
 	[stack release];
 	
 	insideException=NO;

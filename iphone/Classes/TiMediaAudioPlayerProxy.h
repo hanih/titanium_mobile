@@ -1,10 +1,10 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
-#ifdef USE_TI_MEDIA
+#ifdef USE_TI_MEDIAAUDIOPLAYER
 
 
 #import "AudioStreamer/AudioStreamer.h"
@@ -13,7 +13,7 @@
 @interface TiMediaAudioPlayerProxy : TiProxy<AudioStreamerDelegate> {
 @private
 	NSURL *url;
-    NSUInteger bufferSize;
+    UInt32 bufferSize;
 	double volume;
     double duration;
 	AudioStreamer *player;
@@ -33,7 +33,6 @@
 
 @property (nonatomic,copy)	NSNumber *volume;
 
-@property (nonatomic,readwrite,assign) NSNumber* audioSessionMode;
 @property (nonatomic,readwrite,assign) NSNumber* bufferSize;
 
 @property (nonatomic,readonly) NSNumber *STATE_INITIALIZED;

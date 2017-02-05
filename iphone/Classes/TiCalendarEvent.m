@@ -10,6 +10,7 @@
 #import "TiCalendarEvent.h"
 #import "TiCalendarAlert.h"
 #import "TiCalendarRecurrenceRule.h"
+#import "TiCalendarAttendee.h"
 
 @implementation TiCalendarEvent
 
@@ -41,7 +42,6 @@
 {
     return @"Ti.Calendar.Event";
 }
-
 
 +(NSArray*) convertEvents:(NSArray*)events_ withContext:(id<TiEvaluator>)context_  calendar:(EKCalendar*)calendar_ module:(CalendarModule*)module_
 {
@@ -116,6 +116,7 @@
         for (EKRecurrenceRule* rule_ in rules_) {
             TiCalendarRecurrenceRule* rule = [[TiCalendarRecurrenceRule alloc] _initWithPageContext:[self executionContext] rule:rule_];
             [rules addObject:rule];
+			RELEASE_TO_NIL(rule);
         }
         return rules;
      }
@@ -193,8 +194,8 @@
     else if ([key isEqualToString:@"recurrenceRules"]) {
         ENSURE_TYPE_OR_NIL(value,NSArray);
         NSMutableArray * rules = [NSMutableArray arrayWithCapacity:[value count]];
-        for (TiCalendarRecurrenceRule *recurranceRule_ in value) {
-            EKRecurrenceRule * ruleToBeAdded = [recurranceRule_ ruleForRecurrence];
+        for (TiCalendarRecurrenceRule *recurrenceRule_ in value) {
+            EKRecurrenceRule * ruleToBeAdded = [recurrenceRule_ ruleForRecurrence];
             [rules addObject:ruleToBeAdded];
         }
         currEvent.recurrenceRules = rules;
@@ -254,6 +255,12 @@
 }
 
 -(TiCalendarRecurrenceRule*) createRecurenceRule:(id)arg
+{
+    DEPRECATED_REPLACED(@"Calendar.createRecurenceRule()", @"5.0.0",@"Calendar.createRecurrenceRule()");
+    return [self createRecurrenceRule:arg];
+}
+
+-(TiCalendarRecurrenceRule*) createRecurrenceRule:(id)arg
 {
     ENSURE_ARRAY(arg);
     NSDictionary *args = [arg objectAtIndex:0];
@@ -386,28 +393,28 @@
                                                                            setPositions:setPositions
                                                                                     end:end] autorelease];
         if (rule == NULL) {
-            [self throwException:@"Error while trying to create recurrance rule."
+            [self throwException:@"Error while trying to create recurrence rule."
                        subreason:nil
                         location:CODELOCATION];
             
             return NULL;
         }
-        TiCalendarRecurrenceRule* recurranceRule = [[[TiCalendarRecurrenceRule alloc] _initWithPageContext:[self executionContext]
+        TiCalendarRecurrenceRule* recurrenceRule = [[[TiCalendarRecurrenceRule alloc] _initWithPageContext:[self executionContext]
                                                                                                       rule:rule] autorelease];
-        return recurranceRule;
+        return recurrenceRule;
     } /*endof if (frequency != EKRecurrenceFrequencyDaily)*/
     else {
         EKRecurrenceRule* rule = [[[EKRecurrenceRule alloc] initRecurrenceWithFrequency:frequency interval:interval end:end] autorelease];
         if (rule == NULL) {
-            [self throwException:@"Error while trying to create recurrance rule."
+            [self throwException:@"Error while trying to create recurrence rule."
                        subreason:nil
                         location:CODELOCATION];
             
             return NULL;
         }
-        TiCalendarRecurrenceRule* recurranceRule = [[[TiCalendarRecurrenceRule alloc] _initWithPageContext:[self executionContext]
+        TiCalendarRecurrenceRule* recurrenceRule = [[[TiCalendarRecurrenceRule alloc] _initWithPageContext:[self executionContext]
                                                                                                       rule:rule] autorelease];
-        return recurranceRule;
+        return recurrenceRule;
     }
 }
 
@@ -435,11 +442,17 @@
 
 -(void) removeRecurenceRule:(id)arg
 {
+    DEPRECATED_REPLACED(@"Calendar.removeRecurenceRule()", @"5.0.0",@"Calendar.removeRecurrenceRule()");
+    [self removeRecurrenceRule:arg];
+}
+
+-(void) removeRecurrenceRule:(id)arg
+{
     TiCalendarRecurrenceRule* ruleProxy = nil;
     ENSURE_ARG_AT_INDEX(ruleProxy, arg, 0, TiCalendarRecurrenceRule);
         
     if (![NSThread isMainThread]) {
-        TiThreadPerformOnMainThread(^{[self removeRecurenceRule:arg];}, YES);
+        TiThreadPerformOnMainThread(^{[self removeRecurrenceRule:arg];}, YES);
         return;
     }
         
@@ -514,6 +527,18 @@
         result = [[self event] refresh];
     }, YES);
     return NUMBOOL(result);
+}
+
+-(NSArray*) attendees
+{
+    NSArray* participants = [[self event] attendees];
+    NSMutableArray* result = [NSMutableArray arrayWithCapacity:[participants count]];
+    
+    for (EKParticipant* participant in participants) {
+        [result addObject:[[[TiCalendarAttendee alloc] _initWithPageContext:[self executionContext] participant:participant] autorelease]];
+    }
+    
+    return result;
 }
 
 @end

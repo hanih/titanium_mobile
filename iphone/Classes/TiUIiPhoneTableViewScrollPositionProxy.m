@@ -7,6 +7,7 @@
 #if defined(USE_TI_UIIPHONETABLEVIEWSCROLLPOSITION) || defined(USE_TI_UIIPHONELISTVIEWSCROLLPOSITION)
 
 #import "TiUIiPhoneTableViewScrollPositionProxy.h"
+#import "TiBase.h"
 
 @implementation TiUIiPhoneTableViewScrollPositionProxy
 
@@ -16,10 +17,10 @@
 }
 
 
-MAKE_SYSTEM_PROP(NONE,UITableViewScrollPositionNone);
-MAKE_SYSTEM_PROP(TOP,UITableViewScrollPositionTop);
-MAKE_SYSTEM_PROP(MIDDLE,UITableViewScrollPositionMiddle);
-MAKE_SYSTEM_PROP(BOTTOM,UITableViewScrollPositionBottom);
+MAKE_SYSTEM_PROP_DEPRECATED_REPLACED(NONE,  UITableViewScrollPositionNone,@"UI.iPhone.TableViewScrollPosition.NONE",@"5.4.0",@"UI.iOS.TableViewScrollPosition.NONE");
+MAKE_SYSTEM_PROP_DEPRECATED_REPLACED(TOP,   UITableViewScrollPositionTop,@"UI.iPhone.TableViewScrollPosition.TOP",@"5.4.0",@"UI.iOS.TableViewScrollPosition.TOP");
+MAKE_SYSTEM_PROP_DEPRECATED_REPLACED(MIDDLE,UITableViewScrollPositionMiddle,@"UI.iPhone.TableViewScrollPosition.MIDDLE",@"5.4.0",@"UI.iOS.TableViewScrollPosition.MIDDLE");
+MAKE_SYSTEM_PROP_DEPRECATED_REPLACED(BOTTOM,UITableViewScrollPositionBottom,@"UI.iPhone.TableViewScrollPosition.BOTTOM",@"5.4.0",@"UI.iOS.TableViewScrollPosition.BOTTOM");
 
 
 @end

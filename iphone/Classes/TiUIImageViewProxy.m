@@ -19,6 +19,10 @@
 @implementation TiUIImageViewProxy
 @synthesize imageURL;
 
+#ifdef TI_USE_KROLL_THREAD
+@synthesize loadEventState;
+#endif
+
 static NSArray* imageKeySequence;
 
 #pragma mark Internal
@@ -39,16 +43,23 @@ static NSArray* imageKeySequence;
 
 -(void)propagateLoadEvent:(NSString *)stateString
 {
+#ifndef TI_USE_AUTOLAYOUT
     //Send out a content change message if we are auto sizing
     if (TiDimensionIsAuto(layoutProperties.width) || TiDimensionIsAutoSize(layoutProperties.width) || TiDimensionIsUndefined(layoutProperties.width) ||
         TiDimensionIsAuto(layoutProperties.height) || TiDimensionIsAutoSize(layoutProperties.height) || TiDimensionIsUndefined(layoutProperties.height)) {
         [self refreshSize];
         [self willChangeSize];
     }
-    
+#endif
+	
     if ([self _hasListeners:@"load"]) {
         NSDictionary *event = [NSDictionary dictionaryWithObject:stateString forKey:@"state"];
         [self fireEvent:@"load" withObject:event];
+#ifdef TI_USE_KROLL_THREAD
+    } else {
+        RELEASE_TO_NIL(loadEventState);
+        loadEventState = [stateString copy];
+#endif
     }
 }
 
@@ -125,7 +136,10 @@ static NSArray* imageKeySequence;
     [self replaceValue:nil forKey:@"image" notification:NO];
     
     RELEASE_TO_NIL(imageURL);
-	[super dealloc];
+#ifdef TI_USE_KROLL_THREAD
+    RELEASE_TO_NIL(loadEventState);
+#endif
+    [super dealloc];
 }
 
 -(id)toBlob:(id)args
@@ -150,13 +164,13 @@ static NSArray* imageKeySequence;
 		
 		if (image!=nil)
 		{
-			return [[[TiBlob alloc] initWithImage:image] autorelease];
+			return [[[TiBlob alloc] _initWithPageContext:[self pageContext] andImage:image] autorelease];
 		}
 
 		// we're on the non-UI thread, we need to block to load
 
 		image = [[ImageLoader sharedLoader] loadRemote:url_];
-		return [[[TiBlob alloc] initWithImage:image] autorelease];
+		return [[[TiBlob alloc] _initWithPageContext:[self pageContext] andImage:image] autorelease];
 	}
 	return nil;
 }
@@ -234,6 +248,7 @@ USE_VIEW_FOR_CONTENT_HEIGHT
 {
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(TiDimension)defaultAutoWidthBehavior:(id)unused
 {
     return TiDimensionAutoSize;
@@ -242,6 +257,7 @@ USE_VIEW_FOR_CONTENT_HEIGHT
 {
     return TiDimensionAutoSize;
 }
+#endif
 
 @end
 

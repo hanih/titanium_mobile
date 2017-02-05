@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -23,8 +23,14 @@
 
 -(void) dealloc {
     if (controller != nil) {
+#ifdef TI_USE_KROLL_THREAD
         TiThreadReleaseOnMainThread(controller, NO);
         controller = nil;
+#else
+        TiThreadPerformOnMainThread(^{
+            RELEASE_TO_NIL(controller);
+        }, YES);
+#endif
     }
     
 #ifdef USE_TI_UIIOSTRANSITIONANIMATION
@@ -145,10 +151,27 @@
 -(void)attachViewToTopContainerController
 {
     UIViewController<TiControllerContainment>* topContainerController = [[[TiApp app] controller] topContainerController];
-    UIView *rootView = [topContainerController view];
+    UIView *rootView = [topContainerController hostingView];
     TiUIView* theView = [self view];
     [rootView addSubview:theView];
     [rootView bringSubviewToFront:theView];
+    
+    // TODO: Revisit
+    /*
+    UIViewController<TiControllerContainment>* topContainerController = [[[TiApp app] controller] topContainerController];
+    UIView *rootView = [topContainerController hostingView];
+
+    UIViewController* thisViewController = [self hostingController];
+    UIView* theView = [thisViewController view];
+    [theView setFrame:[rootView bounds]];
+    
+    [thisViewController willMoveToParentViewController:topContainerController];
+    [topContainerController addChildViewController:thisViewController];
+    
+    [rootView addSubview:theView];
+    [rootView bringSubviewToFront:theView];
+    [thisViewController didMoveToParentViewController:topContainerController];
+     */
 }
 
 -(BOOL)argOrWindowPropertyExists:(NSString*)key args:(id)args
@@ -237,15 +260,8 @@
     int theStyle = [TiUtils intValue:[self valueForUndefinedKey:@"statusBarStyle"] def:[[[TiApp app] controller] defaultStatusBarStyle]];
     switch (theStyle){
         case UIStatusBarStyleDefault:
-            barStyle = UIStatusBarStyleDefault;
-            break;
-        case UIStatusBarStyleBlackOpaque:
-        case UIStatusBarStyleBlackTranslucent: //This will also catch UIStatusBarStyleLightContent
-            if ([TiUtils isIOS7OrGreater]) {
-                barStyle = 1;//UIStatusBarStyleLightContent;
-            } else {
-                barStyle = theStyle;
-            }
+        case UIStatusBarStyleLightContent:
+            barStyle = theStyle;
             break;
         default:
             barStyle = UIStatusBarStyleDefault;
@@ -272,15 +288,8 @@
     int theStyle = [TiUtils intValue:style def:[[[TiApp app] controller] defaultStatusBarStyle]];
     switch (theStyle){
         case UIStatusBarStyleDefault:
-            barStyle = UIStatusBarStyleDefault;
-            break;
-        case UIStatusBarStyleBlackOpaque:
-        case UIStatusBarStyleBlackTranslucent: //This will also catch UIStatusBarStyleLightContent
-            if ([TiUtils isIOS7OrGreater]) {
-                barStyle = 1;//UIStatusBarStyleLightContent;
-            } else {
-                barStyle = theStyle;
-            }
+        case UIStatusBarStyleLightContent:
+            barStyle = theStyle;
             break;
         default:
             barStyle = UIStatusBarStyleDefault;
@@ -302,7 +311,9 @@
     }
     
     if (!opened) {
+#ifndef TI_USE_KROLL_THREAD
         DebugLog(@"Window is not open. Ignoring this close call");
+#endif
         return;
     }
     
@@ -413,11 +424,9 @@
         UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, nil);
         [[self view] setAccessibilityElementsHidden:NO];
     }
-    if ([TiUtils isIOS7OrGreater]) {
-        TiThreadPerformOnMainThread(^{
-            [self forceNavBarFrame];
-        }, NO);
-    }
+    TiThreadPerformOnMainThread(^{
+        [self forceNavBarFrame];
+    }, NO);
 
 }
 
@@ -574,10 +583,90 @@
     return _supportedOrientations;
 }
 
+
+-(void)showNavBar:(NSArray*)args
+{
+    ENSURE_UI_THREAD(showNavBar,args);
+    [self replaceValue:[NSNumber numberWithBool:NO] forKey:@"navBarHidden" notification:NO];
+    if (controller!=nil)
+    {
+        id properties = (args!=nil && [args count] > 0) ? [args objectAtIndex:0] : nil;
+        BOOL animated = [TiUtils boolValue:@"animated" properties:properties def:YES];
+        [[controller navigationController] setNavigationBarHidden:NO animated:animated];
+    }
+}
+
+-(void)hideNavBar:(NSArray*)args
+{
+    ENSURE_UI_THREAD(hideNavBar,args);
+    [self replaceValue:[NSNumber numberWithBool:YES] forKey:@"navBarHidden" notification:NO];
+    if (controller!=nil)
+    {
+        id properties = (args!=nil && [args count] > 0) ? [args objectAtIndex:0] : nil;
+        BOOL animated = [TiUtils boolValue:@"animated" properties:properties def:YES];
+        [[controller navigationController] setNavigationBarHidden:YES animated:animated];
+        //TODO: need to fix height
+    }
+}
+
+-(void)showToolbar:(NSArray*)args
+{
+    ENSURE_UI_THREAD(showToolbar,args);
+    [self replaceValue:[NSNumber numberWithBool:NO] forKey:@"toolbarHidden" notification:NO];
+    if (controller!=nil)
+    {
+        id properties = (args!=nil && [args count] > 0) ? [args objectAtIndex:0] : nil;
+        BOOL animated = [TiUtils boolValue:@"animated" properties:properties def:YES];
+        [[controller navigationController] setToolbarHidden:NO animated:animated];
+    } else {
+        NSLog(@"[WARN] Use this method only with toolbars which are attached to a Ti.UI.iOS.NavigationWindow by using the setToolbar method.");
+    }
+}
+
+-(void)hideToolbar:(NSArray*)args
+{
+    ENSURE_UI_THREAD(hideToolbar,args);
+    [self replaceValue:[NSNumber numberWithBool:YES] forKey:@"toolbarHidden" notification:NO];
+    if (controller!=nil)
+    {
+        id properties = (args!=nil && [args count] > 0) ? [args objectAtIndex:0] : nil;
+        BOOL animated = [TiUtils boolValue:@"animated" properties:properties def:YES];
+        [[controller navigationController] setToolbarHidden:YES animated:animated];
+    } else {
+        NSLog(@"[WARN] Use this method only with toolbars which are attached to a Ti.UI.iOS.NavigationWindow by using the setToolbar method.");
+    }
+}
+
+
+
 #pragma mark - Appearance and Rotation Callbacks. For subclasses to override.
 //Containing controller will call these callbacks(appearance/rotation) on contained windows when it receives them.
 -(void)viewWillAppear:(BOOL)animated
 {
+    id navBarHidden = [self valueForUndefinedKey:@"navBarHidden"];
+    id hidesBarsOnSwipe = [self valueForUndefinedKey:@"hidesBarsOnSwipe"];
+    id hidesBarsOnTap = [self valueForUndefinedKey:@"hidesBarsOnTap"];
+    id hidesBarsWhenKeyboardAppears = [self valueForUndefinedKey:@"hidesBarsWhenKeyboardAppears"];
+
+    if (navBarHidden) {
+        id properties = [NSArray arrayWithObject:[NSDictionary dictionaryWithObject:[NSNumber numberWithBool:NO] forKey:@"animated"]];
+        if ([TiUtils boolValue:navBarHidden]) {
+            [self hideNavBar:properties];
+        }
+        else {
+            [self showNavBar:properties];
+        }
+    }
+    if (hidesBarsOnSwipe) {
+        [self setHidesBarsOnSwipe:hidesBarsOnSwipe];
+    }
+    if (hidesBarsOnTap) {
+        [self setHidesBarsOnTap:hidesBarsOnTap];
+    }
+    if (hidesBarsWhenKeyboardAppears) {
+        [self setHidesBarsWhenKeyboardAppears:hidesBarsWhenKeyboardAppears];
+    }
+    
     [self willShow];
 }
 -(void)viewWillDisappear:(BOOL)animated
@@ -600,6 +689,43 @@
 {
     if (isModal && closing) {
         [self windowDidClose];
+    }
+}
+
+
+-(void)setHidesBarsOnSwipe:(id)value
+{
+    ENSURE_TYPE(value, NSNumber);
+    ENSURE_UI_THREAD(setHidesBarsOnSwipe, value);
+    
+    [self replaceValue:value forKey:@"hidesBarsOnSwipe" notification:NO];
+    
+    if ([TiUtils isIOS8OrGreater] && (controller != nil) && ([controller navigationController] != nil)) {
+        [[controller navigationController] setHidesBarsOnSwipe:[TiUtils boolValue:value def:NO]];
+    }
+}
+
+-(void)setHidesBarsOnTap:(id)value
+{
+    ENSURE_TYPE(value, NSNumber);
+    ENSURE_UI_THREAD(setHidesBarsOnTap, value);
+    
+    [self replaceValue:value forKey:@"hidesBarsOnTap" notification:NO];
+    
+    if ([TiUtils isIOS8OrGreater] && (controller != nil) && ([controller navigationController] != nil)) {
+        [[controller navigationController] setHidesBarsOnTap:[TiUtils boolValue:value def:NO]];
+    }
+}
+
+-(void)setHidesBarsWhenKeyboardAppears:(id)value
+{
+    ENSURE_TYPE(value, NSNumber);
+    ENSURE_UI_THREAD(setHidesBarsWhenKeyboardAppears, value);
+    
+    [self replaceValue:value forKey:@"hidesBarsWhenKeyboardAppears" notification:NO];
+    
+    if ([TiUtils isIOS8OrGreater] && (controller != nil) && ([controller navigationController] != nil)) {
+        [[controller navigationController] setHidesBarsWhenKeyboardAppears:[TiUtils boolValue:value def:NO]];
     }
 }
 
@@ -633,7 +759,7 @@
     BOOL isOpenAnimation = NO;
     UIView* hostingView = nil;
     if (sender == openAnimation) {
-        hostingView = [[[[TiApp app] controller] topContainerController] view];
+        hostingView = [[[[TiApp app] controller] topContainerController] hostingView];
         isOpenAnimation = YES;
     } else {
         hostingView = [[self view] superview];
@@ -679,8 +805,10 @@
                 TiViewProxy* theProxy = (TiViewProxy*)[(TiUIView*)animatedOver proxy];
                 if ([theProxy viewAttached]) {
                     [[[self view] superview] insertSubview:animatedOver belowSubview:[self view]];
+#ifndef TI_USE_AUTOLAYOUT
                     LayoutConstraint* layoutProps = [theProxy layoutProperties];
                     ApplyConstraintToViewWithBounds(layoutProps, (TiUIView*)animatedOver, [[animatedOver superview] bounds]);
+#endif
                     [theProxy layoutChildren:NO];
                     RELEASE_TO_NIL(animatedOver);
                 }

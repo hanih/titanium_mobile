@@ -1,7 +1,9 @@
 package org.appcelerator.titanium.view;
 
 import org.appcelerator.kroll.common.TiMessenger;
+import org.appcelerator.titanium.TiC;
 import org.appcelerator.titanium.proxy.TiViewProxy;
+import org.appcelerator.titanium.util.TiConvert;
 
 import android.app.Activity;
 import android.os.Handler;
@@ -17,52 +19,49 @@ public abstract class TiUIFragment extends TiUIView implements Handler.Callback
 	private static int viewId = 1000;
 
 	private Fragment fragment;
-	private Handler handler;
+	protected boolean fragmentOnly = false;
+
 
 	public TiUIFragment(TiViewProxy proxy, Activity activity)
 	{
 		super(proxy);
-
-		TiCompositeLayout container = new TiCompositeLayout(activity, proxy)
-		{
-			@Override
-			public boolean dispatchTouchEvent(MotionEvent ev)
-			{
-				return interceptTouchEvent(ev) || super.dispatchTouchEvent(ev);
-			}
-		};
-		container.setId(viewId++);
-		setNativeView(container);
-
-		FragmentManager manager = ((FragmentActivity) activity).getSupportFragmentManager();
-		Fragment tabFragment = manager.findFragmentById(android.R.id.tabcontent);
-		FragmentTransaction transaction = null;
-		//check if this map is opened inside an actionbar tab, which is another fragment
-		if (tabFragment != null) {
-			FragmentManager childManager = tabFragment.getChildFragmentManager();
-			transaction = childManager.beginTransaction();
-		} else {
-			transaction = manager.beginTransaction();
+		// When 'fragmentOnly' property is enabled, we generate the standalone fragment, enabling
+		// us to add it directly to other fragment managers.
+		if (proxy.hasProperty(TiC.PROPERTY_FRAGMENT_ONLY)) {
+			fragmentOnly = TiConvert.toBoolean(proxy.getProperty(TiC.PROPERTY_FRAGMENT_ONLY), false);
 		}
-		fragment = createFragment();
-		transaction.add(container.getId(), fragment);
-		transaction.commit();
 
-		// initialize handler
-		handler = new Handler(TiMessenger.getMainMessenger().getLooper(), this);
-		// send a msg to skip a cycle to make sure the fragment's view is created and initialized
-		handler.obtainMessage().sendToTarget();
+		if (fragmentOnly) {
+			fragment = createFragment();
+		} else {
+			TiCompositeLayout container = new TiCompositeLayout(activity, proxy)
+			{
+				@Override
+				public boolean dispatchTouchEvent(MotionEvent ev)
+				{
+					return interceptTouchEvent(ev) || super.dispatchTouchEvent(ev);
+				}
+			};
+			container.setId(viewId++);
+			setNativeView(container);
+
+			FragmentManager manager = ((FragmentActivity) activity).getSupportFragmentManager();
+			FragmentTransaction transaction = manager.beginTransaction();
+			fragment = createFragment();
+			transaction.add(container.getId(), fragment);
+			transaction.commitAllowingStateLoss();
+		}
+
 	}
+
 
 	public Fragment getFragment()
 	{
 		return fragment;
 	}
 
-	public boolean handleMessage(Message msg)
-	{
-		// we know here that the view is available, so we can process properties
-		onViewCreated();
+	public boolean handleMessage (Message msg) {
+		//overwriting so descendents don't have to
 		return true;
 	}
 
@@ -70,7 +69,7 @@ public abstract class TiUIFragment extends TiUIView implements Handler.Callback
 	{
 		return false;
 	}
-	
+
 	@Override
 	public void release()
 	{
@@ -91,8 +90,6 @@ public abstract class TiUIFragment extends TiUIView implements Handler.Callback
 		}
 		super.release();
 	}
-
-	protected abstract void onViewCreated();
 
 	protected abstract Fragment createFragment();
 }

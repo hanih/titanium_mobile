@@ -19,10 +19,12 @@ import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiC;
 import org.appcelerator.titanium.proxy.TiViewProxy;
 import org.appcelerator.titanium.util.TiConvert;
+import org.appcelerator.titanium.util.TiUIHelper;
 import org.appcelerator.titanium.view.TiUIView;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Typeface;
 import android.widget.LinearLayout;
 
 public class TiUITimeSpinner extends TiUIView
@@ -109,7 +111,6 @@ public class TiUITimeSpinner extends TiUIView
 		if ( !format24 ) {
 			layout.addView(amPmWheel);
 		}
-		
 		setNativeView(layout);
 	}
 
@@ -118,6 +119,10 @@ public class TiUITimeSpinner extends TiUIView
 		super.processProperties(d);
 		
 		boolean valueExistsInProxy = false;
+
+		if (d.containsKey(TiC.PROPERTY_FONT)) {
+			setFontProperties();
+		}
 
 		if (d.containsKey(TiC.PROPERTY_VALUE)) {
 			calendar.setTime((Date)d.get(TiC.PROPERTY_VALUE));
@@ -132,6 +137,53 @@ public class TiUITimeSpinner extends TiUIView
 
 	}
 	
+	private void setFontProperties()
+	{
+		Float fontSize = null;
+		Typeface typeface = null;
+		String[] fontProperties = TiUIHelper.getFontProperties(proxy.getProperties());
+
+		if (fontProperties[TiUIHelper.FONT_SIZE_POSITION] != null) {
+			fontSize = Float.valueOf(TiUIHelper.getSize(fontProperties[TiUIHelper.FONT_SIZE_POSITION]));
+		}
+
+		if (fontProperties[TiUIHelper.FONT_FAMILY_POSITION] != null) {
+			typeface = TiUIHelper.toTypeface(fontProperties[TiUIHelper.FONT_FAMILY_POSITION]);
+		}
+		Integer typefaceWeight = null;
+		if (fontProperties[TiUIHelper.FONT_WEIGHT_POSITION] != null) {
+			typefaceWeight = Integer.valueOf(TiUIHelper.toTypefaceStyle(fontProperties[TiUIHelper.FONT_WEIGHT_POSITION],
+				fontProperties[TiUIHelper.FONT_SIZE_POSITION]));
+		}
+
+		if (typeface != null) {
+			hoursWheel.setTypeface(typeface);
+			minutesWheel.setTypeface(typeface);
+			if (amPmWheel != null) {
+				amPmWheel.setTypeface(typeface);
+			}
+		}
+		if (typefaceWeight != null) {
+			hoursWheel.setTypefaceWeight(typefaceWeight);
+			minutesWheel.setTypefaceWeight(typefaceWeight);
+			if (amPmWheel != null) {
+				amPmWheel.setTypefaceWeight(typefaceWeight);
+			}
+		}
+		if (fontSize != null) {
+			hoursWheel.setTextSize(fontSize.intValue());
+			minutesWheel.setTextSize(fontSize.intValue());
+			if (amPmWheel != null) {
+				amPmWheel.setTextSize(fontSize.intValue());
+			}
+		}
+		hoursWheel.invalidate();
+		minutesWheel.invalidate();
+		if (amPmWheel != null) {
+			amPmWheel.invalidate();
+		}
+	}
+
 	@Override
 	public void propertyChanged(String key, Object oldValue, Object newValue,
 			KrollProxy proxy)
@@ -163,8 +215,10 @@ public class TiUITimeSpinner extends TiUIView
 			} else {
 				// Reject it
 				Log.w(TAG, "Ignoring illegal minuteInterval value: " + interval);
-				proxy.setProperty(TiC.PROPERTY_MINUTE_INTERVAL, oldValue, false);
+				proxy.setProperty(TiC.PROPERTY_MINUTE_INTERVAL, oldValue);
 			}
+		} else if (key.equals(TiC.PROPERTY_FONT)) {
+			setFontProperties();
 		}
 		super.propertyChanged(key, oldValue, newValue, proxy);
 	}

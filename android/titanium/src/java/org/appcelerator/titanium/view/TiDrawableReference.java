@@ -10,8 +10,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.SoftReference;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,13 +21,10 @@ import java.util.Map;
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollProxy;
 import org.appcelerator.kroll.common.Log;
-import org.appcelerator.kroll.common.TiFastDev;
 import org.appcelerator.titanium.TiApplication;
 import org.appcelerator.titanium.TiBlob;
-import org.appcelerator.titanium.TiC;
 import org.appcelerator.titanium.TiDimension;
 import org.appcelerator.titanium.io.TiBaseFile;
-import org.appcelerator.titanium.io.TiFileFactory;
 import org.appcelerator.titanium.util.TiConvert;
 import org.appcelerator.titanium.util.TiDownloadListener;
 import org.appcelerator.titanium.util.TiDownloadManager;
@@ -43,7 +42,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.media.ExifInterface;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.webkit.URLUtil;
@@ -51,6 +49,7 @@ import android.webkit.URLUtil;
 /**
  * Helper class for loading, scaling, and caching images if necessary.
  */
+@SuppressWarnings("deprecation")
 public class TiDrawableReference
 {
 	private static Map<Integer, Bounds> boundsCache;
@@ -298,12 +297,36 @@ public class TiDrawableReference
 	 */
 	public Bitmap getBitmap(boolean needRetry)
 	{
+		return getBitmap(needRetry, false);
+	}
+	
+	/**
+	 * Gets the bitmap from the resource. If densityScaled is set to true, image is scaled
+	 * based on the device density otherwise no sampling/scaling is done.
+	 * When needRetry is set to true, it will retry loading when decode fails.
+	 * If decode fails because of out of memory, clear the memory and call GC and retry loading a smaller image.
+	 * If decode fails because of the odd Android 2.3/Gingerbread behavior (TIMOB-3599), retry loading the original image.
+	 * This method should be called from a background thread when needRetry is set to true because it may block
+	 * the thread if it needs to retry several times.
+	 * @param needRetry If true, it will retry loading when decode fails.
+	 * @return Bitmap, or null if errors occurred while trying to load or fetch it.
+	 */
+	public Bitmap getBitmap(boolean needRetry, boolean densityScaled)
+	{
 		InputStream is = getInputStream();
 		Bitmap b = null;
 		BitmapFactory.Options opts = new BitmapFactory.Options();
 		opts.inInputShareable = true;
 		opts.inPurgeable = true;
 		opts.inPreferredConfig = Bitmap.Config.RGB_565;
+		if (densityScaled) {
+			DisplayMetrics dm = new DisplayMetrics();
+			dm.setToDefaults();
+			opts.inDensity = DisplayMetrics.DENSITY_MEDIUM;
+
+			opts.inTargetDensity = dm.densityDpi;
+			opts.inScaled = true;
+		}
 
 		try {
 			if (needRetry) {
@@ -350,6 +373,39 @@ public class TiDrawableReference
 						}
 						opts.inSampleSize = (int) Math.pow(2, i);
 					}
+				}
+				// If decoding fails, we try to get it from httpclient.
+				if (b == null) {
+				    HttpURLConnection connection = null;
+				    try {
+				        URL mURL = new URL(url);
+				        connection = (HttpURLConnection) mURL.openConnection();
+				        connection.setInstanceFollowRedirects(true);
+				        connection.setDoInput(true);
+				        connection.connect();
+				        int responseCode = connection.getResponseCode();
+				        if (responseCode == 200) {
+				            b = BitmapFactory.decodeStream(connection.getInputStream());
+				        } else if (responseCode == HttpURLConnection.HTTP_MOVED_PERM || responseCode == HttpURLConnection.HTTP_MOVED_TEMP) {
+				            String location = connection.getHeaderField("Location");
+				            URL nURL = new URL(location);
+				            String prevProtocol = mURL.getProtocol();
+				            //HttpURLConnection doesn't handle http to https redirects so we do it manually.
+				            if (prevProtocol != null && !prevProtocol.equals(nURL.getProtocol())) {
+				                b = BitmapFactory.decodeStream(nURL.openStream());
+				            } else {
+				                b = BitmapFactory.decodeStream(connection.getInputStream());
+				            }
+				        } else {
+				            b = null;
+				        }
+				    } catch (Exception e) {
+				        b = null;
+				    } finally {
+                        if (connection != null) {
+                            connection.disconnect();
+                        }
+                    }
 				}
 			} else {
 				if (is == null) {
@@ -439,6 +495,23 @@ public class TiDrawableReference
 		Drawable drawable = getResourceDrawable();
 		if (drawable == null) {
 			Bitmap b = getBitmap();
+			if (b != null) {
+				drawable = new BitmapDrawable(b);
+			}
+		}
+		return drawable;
+	}
+	
+	/**
+	 * Gets a scaled resource drawable directly if the reference is to a resource, else
+	 * makes a BitmapDrawable with default attributes. Scaling is done based on the device
+	 * resolution.
+	 */
+	public Drawable getDensityScaledDrawable()
+	{
+		Drawable drawable = getResourceDrawable();
+		if (drawable == null) {
+			Bitmap b = getBitmap(false, true);
 			if (b != null) {
 				drawable = new BitmapDrawable(b);
 			}
@@ -784,13 +857,8 @@ public class TiDrawableReference
 
 		if (isTypeUrl() && url != null) {
 			try {
-				if (url.startsWith(TiC.URL_ANDROID_ASSET_RESOURCES)
-					&& TiFastDev.isFastDevEnabled()) {
-					TiBaseFile tbf = TiFileFactory.createTitaniumFile(new String[] { url }, false);
-					stream = tbf.getInputStream();
-				} else {
-					stream = TiFileHelper.getInstance().openInputStream(url, false);
-				}
+				stream = TiFileHelper.getInstance().openInputStream(url, false);
+				
 			} catch (IOException e) {
 				Log.e(TAG, "Problem opening stream with url " + url + ": " + e.getMessage(), e);
 			}

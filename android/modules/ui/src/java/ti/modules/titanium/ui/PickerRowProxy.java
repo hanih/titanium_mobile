@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -9,7 +9,7 @@ package ti.modules.titanium.ui;
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.kroll.common.Log;
-import org.appcelerator.titanium.TiContext;
+import org.appcelerator.titanium.TiC;
 import org.appcelerator.titanium.proxy.TiViewProxy;
 import org.appcelerator.titanium.util.TiConvert;
 import org.appcelerator.titanium.view.TiUIView;
@@ -29,9 +29,16 @@ public class PickerRowProxy extends TiViewProxy
 		super();
 	}
 
-	public PickerRowProxy(TiContext tiContext)
+	@Kroll.getProperty @Kroll.method
+	public String getColor()
 	{
-		this();
+		return (String)getProperty(TiC.PROPERTY_COLOR);
+	}
+
+	@Kroll.setProperty @Kroll.method
+	public void setColor(String color)
+	{
+		setPropertyAndFire(TiC.PROPERTY_COLOR, color);
 	}
 
 	@Kroll.getProperty @Kroll.method
@@ -54,14 +61,14 @@ public class PickerRowProxy extends TiViewProxy
 	{
 		return title;
 	}
-	
+
 	public void setRowListener(PickerRowListener listener)
 	{
 		rowListener = listener;
 	}
-	
+
 	@Override
-	public void add(TiViewProxy child)
+	public void add(Object args)
 	{
 		Log.w(TAG, "PickerRow does not support child controls");
 	}
@@ -85,7 +92,7 @@ public class PickerRowProxy extends TiViewProxy
 			title = TiConvert.toString(options, "title");
 		}
 	}
-	
+
 	public interface PickerRowListener
 	{
 		void rowChanged(PickerRowProxy row);

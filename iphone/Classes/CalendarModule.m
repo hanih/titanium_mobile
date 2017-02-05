@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -66,7 +66,7 @@ typedef void(^EKEventStoreRequestAccessCompletionHandler)(BOOL granted, NSError 
         return nil;
         
     }
-    return [ourStore calendars];
+    return [ourStore calendarsForEntityType:EKEntityTypeEvent];
 }
 
 -(NSString*)apiName
@@ -78,9 +78,6 @@ typedef void(^EKEventStoreRequestAccessCompletionHandler)(BOOL granted, NSError 
 {
     [super startup];
     store = NULL;
-    if ([EKEventStore respondsToSelector:@selector(authorizationStatusForEntityType:)]) {
-         iOS6API = YES;
-    }
 }
 
 -(void) eventStoreChanged:(NSNotification*)notification
@@ -95,9 +92,10 @@ typedef void(^EKEventStoreRequestAccessCompletionHandler)(BOOL granted, NSError 
 
 -(void)dealloc
 {
+	RELEASE_TO_NIL(store);
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[super dealloc];
-    [store release];
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+	
 }
 
 -(void)didReceiveMemoryWarning:(NSNotification*)notification
@@ -162,7 +160,21 @@ typedef void(^EKEventStoreRequestAccessCompletionHandler)(BOOL granted, NSError 
         DebugLog(@"Could not instantiate an event of the event store.");
         return nil;
     }
-    EKCalendar* calendar_ = [ourStore calendarWithIdentifier:arg];
+    EKCalendar* calendar_ = NULL;
+    if ([TiUtils isIOS8OrGreater]) {
+        //Instead of getting calendar by identifier, have to get all and check for match
+        //not optimal but best way to fix non existing shared calendar error
+        NSArray *allCalendars = [ourStore calendarsForEntityType:EKEntityTypeEvent];
+        for (EKCalendar *cal in allCalendars) {
+            if ([cal.calendarIdentifier isEqualToString:arg]) {
+                calendar_ = cal;
+                break;
+            }
+        }
+    }
+    else {
+        calendar_ = [ourStore calendarWithIdentifier:arg];
+    }
     if (calendar_ == NULL) {
         return NULL;
     }
@@ -195,67 +207,83 @@ typedef void(^EKEventStoreRequestAccessCompletionHandler)(BOOL granted, NSError 
 -(void) requestAuthorization:(id)args forEntityType:(EKEntityType)entityType
 {
     ENSURE_SINGLE_ARG(args, KrollCallback);
-	KrollCallback * callback = args;
-	NSString * errorStr = nil;
-	int code = 0;
-	bool doPrompt = NO;
+    KrollCallback * callback = args;
+    NSString * errorStr = nil;
+    int code = 0;
+    BOOL doPrompt = NO;
     
-    
-    if (iOS6API) {
+    long int permissions = [EKEventStore authorizationStatusForEntityType:entityType];
+    switch (permissions) {
+        case EKAuthorizationStatusNotDetermined:
+            doPrompt = YES;
+            break;
+        case EKAuthorizationStatusAuthorized:
+            break;
+        case EKAuthorizationStatusDenied:
+            code = EKAuthorizationStatusDenied;
+            errorStr = @"The user has denied access to events in Calendar.";
+			break;
+        case EKAuthorizationStatusRestricted:
+            code = EKAuthorizationStatusRestricted;
+            errorStr = @"The user is unable to allow access to events in Calendar.";
+        default:
+            break;
+    }
+	
+    if (!doPrompt) {
+        NSDictionary * propertiesDict = [TiUtils dictionaryWithCode:code message:errorStr];
+        NSArray * invocationArray = [[NSArray alloc] initWithObjects:&propertiesDict count:1];
         
-        long int permissions = [EKEventStore authorizationStatusForEntityType:entityType];
-		switch (permissions) {
-			case EKAuthorizationStatusNotDetermined:
-				doPrompt = YES;
-				break;
-			case EKAuthorizationStatusAuthorized:
-				break;
-			case EKAuthorizationStatusDenied:
-				code = EKAuthorizationStatusDenied;
-				errorStr = @"The user has denied access to events in Calendar.";
-			case EKAuthorizationStatusRestricted:
-				code = EKAuthorizationStatusRestricted;
-				errorStr = @"The user is unable to allow access to events in Calendar.";
-			default:
-				break;
-		}
-	}
-    
-	if (!doPrompt) {
-		NSDictionary * propertiesDict = [TiUtils dictionaryWithCode:code message:errorStr];
-		NSArray * invocationArray = [[NSArray alloc] initWithObjects:&propertiesDict count:1];
-        
-		[callback call:invocationArray thisObject:self];
-		[invocationArray release];
-		return;
-	}
-	TiThreadPerformOnMainThread(^(){
+        [callback call:invocationArray thisObject:self];
+        [invocationArray release];
+        return;
+    }
+    TiThreadPerformOnMainThread(^(){
 		
         EKEventStore* ourstore = [self store];
         [ourstore requestAccessToEntityType:EKEntityTypeEvent
                                  completion:^(BOOL granted, NSError *error){
                                      NSDictionary* propertiesDict;
                                      if (error == nil) {
-                                         propertiesDict = [TiUtils dictionaryWithCode:(granted ? 0 : 1) message:nil];
+                                         NSString* errorMsg = granted ? nil : @"The user has denied access to events in Calendar.";
+                                         propertiesDict = [TiUtils dictionaryWithCode:(granted ? 0 : 1) message:errorMsg];
                                      } else {
-                                         propertiesDict = [TiUtils dictionaryWithCode:[error code]
-                                                                              message:[TiUtils messageFromError:error]];
+                                         propertiesDict = [TiUtils dictionaryWithCode:[error code] message:[TiUtils messageFromError:error]];
                                      }
                                      KrollEvent * invocationEvent = [[KrollEvent alloc] initWithCallback:callback eventObject:propertiesDict thisObject:self];
                                      [[callback context] enqueue:invocationEvent];
+									 RELEASE_TO_NIL(invocationEvent);
                                  }];
-	}, NO);
+    }, NO);
 }
 
 #pragma mark - Public API
 
+-(NSNumber*) hasCalendarPermissions:(id)unused
+{
+    NSString *calendarPermission = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"NSCalendarsUsageDescription"];
+    
+    if ([TiUtils isIOS10OrGreater] && !calendarPermission) {
+        NSLog(@"[ERROR] iOS 10 and later requires the key \"NSCalendarsUsageDescription\" inside the plist in your tiapp.xml when accessing the native calendar. Please add the key and re-run the application.");
+    }
+    
+    return NUMBOOL([EKEventStore authorizationStatusForEntityType:EKEntityTypeEvent] == EKAuthorizationStatusAuthorized);
+}
+
 -(void) requestEventsAuthorization:(id)args
+{
+    DEPRECATED_REPLACED(@"Calendar.requestEventsAuthorization()", @"5.1.0", @"Calendar.requestCalendarPermissions()");
+    [self requestCalendarPermissions:args];
+}
+
+-(void) requestCalendarPermissions:(id)args
 {
     ENSURE_SINGLE_ARG(args, KrollCallback);
     [self requestAuthorization:args forEntityType:EKEntityTypeEvent];
 }
 
--(void) requestRemindersAuthorization:(id)args
+// Not documented + used, yet. Part of the 5.2.0 release.
+-(void) requestRemindersPermissions:(id)args
 {
     ENSURE_SINGLE_ARG(args, KrollCallback);
     [self requestAuthorization:args forEntityType:EKEntityTypeReminder];
@@ -263,18 +291,23 @@ typedef void(^EKEventStoreRequestAccessCompletionHandler)(BOOL granted, NSError 
 
 -(NSNumber*) eventsAuthorization
 {
-    long int result = EKAuthorizationStatusAuthorized;
-    if (iOS6API) { //in iOS 5.1 and below: no need to check for authorization.
-        result = [EKEventStore authorizationStatusForEntityType:EKEntityTypeEvent];
-    }
-    return [NSNumber numberWithLong:result];
+    DEPRECATED_REPLACED(@"Calendar.eventsAuthorization", @"5.2.0", @"Calendar.calendarAuthorization");
+    return [self calendarAuthorization];
 }
+
+-(NSNumber*) calendarAuthorization
+{
+    EKAuthorizationStatus result = [EKEventStore authorizationStatusForEntityType:EKEntityTypeEvent];
+    return [NSNumber numberWithInteger:result];
+}
+
 #pragma mark - Properties
 
 MAKE_SYSTEM_PROP(STATUS_NONE,EKEventStatusNone);
 MAKE_SYSTEM_PROP(STATUS_CONFIRMED,EKEventStatusConfirmed);
-MAKE_SYSTEM_PROP(STATUS_TENTATIVE,EKEventStatusNone);
-MAKE_SYSTEM_PROP(STATUS_CANCELED,EKEventStatusNone);
+MAKE_SYSTEM_PROP(STATUS_TENTATIVE,EKEventStatusTentative);
+MAKE_SYSTEM_PROP(STATUS_CANCELED,EKEventStatusCanceled);
+MAKE_SYSTEM_PROP_DEPRECATED_REPLACED(STATUS_CANCELLED, EKEventStatusCanceled, @"Calendar.STATUS_CANCELLED", @"5.2.0", @"Calendar.STATUS_CANCELED")
 
 MAKE_SYSTEM_PROP(AVAILABILITY_NOTSUPPORTED, EKEventAvailabilityNotSupported);
 MAKE_SYSTEM_PROP(AVAILABILITY_BUSY, EKEventAvailabilityBusy);
@@ -295,6 +328,33 @@ MAKE_SYSTEM_PROP(AUTHORIZATION_RESTRICTED, EKAuthorizationStatusRestricted);
 MAKE_SYSTEM_PROP(AUTHORIZATION_DENIED, EKAuthorizationStatusDenied);
 MAKE_SYSTEM_PROP(AUTHORIZATION_AUTHORIZED, EKAuthorizationStatusAuthorized);
 
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_UNKNOWN, EKParticipantStatusUnknown);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_PENDING, EKParticipantStatusPending);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_ACCEPTED, EKParticipantStatusAccepted);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_DECLINED, EKParticipantStatusDeclined);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_TENTATIVE, EKParticipantStatusTentative);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_DELEGATED, EKParticipantStatusDelegated);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_COMPLETED, EKParticipantStatusCompleted);
+MAKE_SYSTEM_PROP(ATTENDEE_STATUS_IN_PROCESS, EKParticipantStatusInProcess);
+
+MAKE_SYSTEM_PROP(ATTENDEE_ROLE_UNKNOWN, EKParticipantRoleUnknown);
+MAKE_SYSTEM_PROP(ATTENDEE_ROLE_REQUIRED, EKParticipantRoleRequired);
+MAKE_SYSTEM_PROP(ATTENDEE_ROLE_OPTIONAL, EKParticipantRoleOptional);
+MAKE_SYSTEM_PROP(ATTENDEE_ROLE_CHAIR, EKParticipantRoleChair);
+MAKE_SYSTEM_PROP(ATTENDEE_ROLE_NON_PARTICIPANT, EKParticipantRoleNonParticipant);
+
+MAKE_SYSTEM_PROP(ATTENDEE_TYPE_UNKNOWN, EKParticipantTypeUnknown);
+MAKE_SYSTEM_PROP(ATTENDEE_TYPE_PERSON, EKParticipantTypePerson);
+MAKE_SYSTEM_PROP(ATTENDEE_TYPE_ROOM, EKParticipantTypeRoom);
+MAKE_SYSTEM_PROP(ATTENDEE_TYPE_RESOURCE, EKParticipantTypeResource);
+MAKE_SYSTEM_PROP(ATTENDEE_TYPE_GROUP, EKParticipantTypeGroup);
+
+MAKE_SYSTEM_PROP(SOURCE_TYPE_LOCAL, EKSourceTypeLocal);
+MAKE_SYSTEM_PROP(SOURCE_TYPE_EXCHANGE, EKSourceTypeExchange);
+MAKE_SYSTEM_PROP(SOURCE_TYPE_CALDAV, EKSourceTypeCalDAV);
+MAKE_SYSTEM_PROP(SOURCE_TYPE_MOBILEME, EKSourceTypeMobileMe);
+MAKE_SYSTEM_PROP(SOURCE_TYPE_SUBSCRIBED, EKSourceTypeSubscribed);
+MAKE_SYSTEM_PROP(SOURCE_TYPE_BIRTHDAYS, EKSourceTypeBirthdays);
 @end
 
 #endif

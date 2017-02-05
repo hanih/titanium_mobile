@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -10,24 +10,29 @@
 
 #import <AddressBook/AddressBook.h>
 #import <AddressBookUI/AddressBookUI.h>
-
+#import <Contacts/Contacts.h>
+#import <ContactsUI/ContactsUI.h>
 #import "KrollCallback.h"
 #import "TiContactsPerson.h"
 
-@interface ContactsModule : TiModule<ABPeoplePickerNavigationControllerDelegate> {
+@interface ContactsModule : TiModule<ABPeoplePickerNavigationControllerDelegate, CNContactPickerDelegate,CNContactViewControllerDelegate, TiContactsPersonUpdateObserver> {
 @private
 	ABAddressBookRef addressBook;
 	ABPeoplePickerNavigationController* picker;
 	BOOL reloadAddressBook;
-	BOOL iOS6API;
 	BOOL animated;
 	KrollCallback* cancelCallback;
 	KrollCallback* selectedPersonCallback;
 	KrollCallback* selectedPropertyCallback;
+	CNContactStore* contactStore;
+	CNContactPickerViewController* contactPicker;
+	CNSaveRequest* saveRequest;
 }
 
 -(ABAddressBookRef)addressBook;
-
+-(CNContactStore*)contactStore;
++(NSArray*)contactKeysWithImage;
++(NSArray*)contactKeysWithoutImage;
 -(void)save:(id)unusued;
 -(void)revert:(id)unused;
 -(void)showContacts:(id)args;
@@ -37,10 +42,9 @@
 -(TiContactsPerson*)createPerson:(id)arg;
 -(void)removePerson:(id)arg;
 
-
-
 @property (nonatomic,readonly) NSNumber* contactsAuthorization;
 -(void) requestAuthorization:(id)args;
+-(void) requestContactsPermissions:(id)args;
 
 @property (nonatomic,readonly) NSNumber* CONTACTS_KIND_PERSON;
 @property (nonatomic,readonly) NSNumber* CONTACTS_KIND_ORGANIZATION;

@@ -1,28 +1,33 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
 package ti.modules.titanium.network;
 
+import java.io.UnsupportedEncodingException;
+
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
 
-import org.apache.http.MethodNotSupportedException;
-import org.apache.http.auth.AuthSchemeFactory;
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollProxy;
 import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.titanium.TiBlob;
 import org.appcelerator.titanium.TiC;
-import org.appcelerator.titanium.TiContext;
 import org.appcelerator.titanium.util.TiConvert;
 
 import ti.modules.titanium.xml.DocumentProxy;
+import android.os.Build;
 
 @Kroll.proxy(creatableInModule=NetworkModule.class, propertyAccessors = {
-	TiC.PROPERTY_FILE
+	TiC.PROPERTY_FILE,
+	TiC.PROPERTY_ONSENDSTREAM,
+	TiC.PROPERTY_ONLOAD,
+	TiC.PROPERTY_ONERROR,
+	TiC.PROPERTY_ONREADYSTATECHANGE,
+	TiC.PROPERTY_ONDATASTREAM
 })
 public class HTTPClientProxy extends KrollProxy
 {
@@ -32,6 +37,7 @@ public class HTTPClientProxy extends KrollProxy
 	@Kroll.constant public static final int LOADING = TiHTTPClient.READY_STATE_LOADING;
 	@Kroll.constant public static final int DONE = TiHTTPClient.READY_STATE_DONE;
 
+	private static final boolean JELLYBEAN_OR_GREATER = (Build.VERSION.SDK_INT >= 16);
 	public static final String PROPERTY_SECURITY_MANAGER = "securityManager";
 	private TiHTTPClient client;
 
@@ -42,27 +48,37 @@ public class HTTPClientProxy extends KrollProxy
 		this.client = new TiHTTPClient(this);
 	}
 
-	public HTTPClientProxy(TiContext tiContext)
-	{
-		this();
-	}
-	
 	public void handleCreationDict(KrollDict dict)
 	{
 		super.handleCreationDict(dict);
+
 		if (hasProperty(TiC.PROPERTY_TIMEOUT)) {
-			client.setTimeout(TiConvert.toInt(getProperty(TiC.PROPERTY_TIMEOUT)));
+			client.setTimeout(TiConvert.toInt(getProperty(TiC.PROPERTY_TIMEOUT),0));
 		}
-		
+
+		if (hasProperty(TiC.PROPERTY_AUTO_REDIRECT)) {
+			client.setAutoRedirect(TiConvert.toBoolean((getProperty(TiC.PROPERTY_AUTO_REDIRECT)),true));
+		}
+
+		if (hasProperty(TiC.PROPERTY_AUTO_ENCODE_URL)) {
+			client.setAutoEncodeUrl(TiConvert.toBoolean((getProperty(TiC.PROPERTY_AUTO_ENCODE_URL)),true));
+		}
+
 		//Set the securityManager on the client if it is defined as a valid value
 		if (hasProperty(PROPERTY_SECURITY_MANAGER)) {
 			Object prop = getProperty(PROPERTY_SECURITY_MANAGER);
-			if (prop instanceof SecurityManagerProtocol) {
-				this.client.securityManager = (SecurityManagerProtocol)prop;
-			} else {
-				throw new IllegalArgumentException("Invalid argument passed to securityManager property. Does not conform to SecurityManagerProtocol");
+			if (prop != null) {
+				if (prop instanceof SecurityManagerProtocol) {
+					this.client.securityManager = (SecurityManagerProtocol)prop;
+				} else {
+					throw new IllegalArgumentException("Invalid argument passed to securityManager property. Does not conform to SecurityManagerProtocol");
+				}
 			}
 		}
+
+		client.setTlsVersion(TiConvert.toInt(getProperty(TiC.PROPERTY_TLS_VERSION), NetworkModule.TLS_DEFAULT));
+
+
 	}
 
 	@Kroll.method
@@ -100,7 +116,7 @@ public class HTTPClientProxy extends KrollProxy
 	{
 		return client.getResponseText();
 	}
-	
+
 	@Kroll.getProperty @Kroll.method
 	public DocumentProxy getResponseXML()
 	{
@@ -126,8 +142,8 @@ public class HTTPClientProxy extends KrollProxy
 	}
 
 	@Kroll.method
-	public void send(@Kroll.argument(optional=true) Object data) 
-		throws MethodNotSupportedException
+	public void send(@Kroll.argument(optional=true) Object data)
+		throws UnsupportedEncodingException
 	{
 		client.send(data);
 	}
@@ -143,13 +159,13 @@ public class HTTPClientProxy extends KrollProxy
 	{
 		client.setRequestHeader(header, value);
 	}
-	
+
 	@Kroll.setProperty @Kroll.method
 	public void setTimeout(int millis)
 	{
 		client.setTimeout(millis);
 	}
-	
+
 	@Kroll.getProperty @Kroll.method
 	public String getLocation()
 	{
@@ -161,7 +177,7 @@ public class HTTPClientProxy extends KrollProxy
 	{
 		return client.getConnectionType();
 	}
-	
+
 	@Kroll.getProperty @Kroll.method
 	public boolean getConnected()
 	{
@@ -248,7 +264,9 @@ public class HTTPClientProxy extends KrollProxy
 		}
 		return null;
 	}
-	
+
+	// This uses Apache
+	/*
 	@Kroll.method
 	public void addAuthFactory(String scheme, Object factory)
 	{
@@ -256,10 +274,11 @@ public class HTTPClientProxy extends KrollProxy
 		if ( (scheme == null) || (scheme.length() == 0) || (! (factory instanceof AuthSchemeFactory) )) {
 			return;
 		}
-		
+
 		client.addAuthFactory(scheme, (AuthSchemeFactory)factory);
 	}
-	
+	*/
+
 	@Kroll.method
 	public void addTrustManager(Object manager)
 	{
@@ -267,13 +286,39 @@ public class HTTPClientProxy extends KrollProxy
 			client.addTrustManager((X509TrustManager)manager);
 		}
 	}
-	
+
 	@Kroll.method
 	public void addKeyManager(Object manager)
 	{
 		if (manager instanceof X509KeyManager) {
 			client.addKeyManager((X509KeyManager)manager);
 		}
+	}
+
+	@Kroll.setProperty @Kroll.method
+	public void setTlsVersion(int tlsVersion)
+	{
+		client.setTlsVersion(tlsVersion);
+	}
+
+	@Kroll.getProperty @Kroll.method
+	public int getTlsVersion()
+	{
+		int tlsVersion;
+
+		if (this.hasProperty(TiC.PROPERTY_TLS_VERSION)) {
+			tlsVersion = TiConvert.toInt(this.getProperty(TiC.PROPERTY_TLS_VERSION));
+
+			if(tlsVersion == NetworkModule.TLS_DEFAULT){
+				if (JELLYBEAN_OR_GREATER) {
+					return NetworkModule.TLS_VERSION_1_2;
+				}
+				return NetworkModule.TLS_VERSION_1_0;
+			}
+			return tlsVersion;
+		}
+
+		return NetworkModule.TLS_DEFAULT;
 	}
 
 	@Override

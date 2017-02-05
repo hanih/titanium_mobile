@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -15,6 +15,9 @@ import org.appcelerator.kroll.KrollProxy;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiC;
 import org.appcelerator.titanium.proxy.TiViewProxy;
+import org.appcelerator.titanium.util.TiConvert;
+import org.appcelerator.titanium.util.TiRHelper;
+import org.appcelerator.titanium.util.TiRHelper.ResourceNotFoundException;
 import org.appcelerator.titanium.util.TiUIHelper;
 import org.appcelerator.titanium.view.TiUIView;
 
@@ -38,6 +41,8 @@ public class TiUINativePicker extends TiUIPicker
 {
 	private static final String TAG = "TiUINativePicker";
 	private boolean firstSelectedFired = false;
+	private static int defaultTextColor;
+	private static boolean setDefaultTextColor = false;
 	
 	public static class TiSpinnerAdapter<T> extends ArrayAdapter<T>
 	{
@@ -52,11 +57,7 @@ public class TiUINativePicker extends TiUIPicker
 		public View getView(int position, View convertView, ViewGroup parent)
 		{
 			TextView tv = (TextView) super.getView(position, convertView, parent);
-			if (fontProperties != null) {
-				TiUIHelper.styleText(tv, fontProperties[TiUIHelper.FONT_FAMILY_POSITION],
-					fontProperties[TiUIHelper.FONT_SIZE_POSITION], fontProperties[TiUIHelper.FONT_WEIGHT_POSITION],
-					fontProperties[TiUIHelper.FONT_STYLE_POSITION]);
-			}
+			styleTextView(position, tv);
 			return tv;
 		}
 
@@ -64,17 +65,32 @@ public class TiUINativePicker extends TiUIPicker
 		public View getDropDownView(int position, View convertView, ViewGroup parent)
 		{
 			TextView tv = (TextView) super.getDropDownView(position, convertView, parent);
-			if (fontProperties != null) {
-				TiUIHelper.styleText(tv, fontProperties[TiUIHelper.FONT_FAMILY_POSITION],
-					fontProperties[TiUIHelper.FONT_SIZE_POSITION], fontProperties[TiUIHelper.FONT_WEIGHT_POSITION],
-					fontProperties[TiUIHelper.FONT_STYLE_POSITION]);
-			}
+			styleTextView(position, tv);
 			return tv;
 		}
 		
 		public void setFontProperties(KrollDict d)
 		{
 			fontProperties = TiUIHelper.getFontProperties(d);
+		}
+		
+		private void styleTextView(int position, TextView tv) {
+			TiViewProxy rowProxy = (TiViewProxy) this.getItem(position);
+			if (fontProperties != null) {
+				TiUIHelper.styleText(tv, fontProperties[TiUIHelper.FONT_FAMILY_POSITION],
+				fontProperties[TiUIHelper.FONT_SIZE_POSITION], fontProperties[TiUIHelper.FONT_WEIGHT_POSITION],
+				fontProperties[TiUIHelper.FONT_STYLE_POSITION]);
+			}
+			if (!setDefaultTextColor) {
+				defaultTextColor = tv.getCurrentTextColor();
+				setDefaultTextColor = true;
+			}
+			if (rowProxy.hasProperty(TiC.PROPERTY_COLOR)) {
+				final int color = TiConvert.toColor((String) rowProxy.getProperty(TiC.PROPERTY_COLOR));
+				tv.setTextColor(color);
+			} else {
+				tv.setTextColor(defaultTextColor);
+			}
 		}
 	}
 	
@@ -85,26 +101,42 @@ public class TiUINativePicker extends TiUIPicker
 	public TiUINativePicker(final TiViewProxy proxy, Activity activity)
 	{
 		this(proxy);
-		Spinner spinner = new Spinner(activity)
+
+		int spinnerId;
+		try {
+			spinnerId = TiRHelper.getResource("layout.titanium_ui_spinner");
+		} catch (ResourceNotFoundException e) {
+			if (Log.isDebugModeEnabled()) {
+				Log.e(TAG, "XML resources could not be found!!!");
+			}
+			return;
+		}
+		Spinner spinner = (Spinner) activity.getLayoutInflater().inflate(spinnerId, null);
+
+		spinner.addOnLayoutChangeListener(new View.OnLayoutChangeListener()
 		{
 			@Override
-			protected void onLayout(boolean changed, int left, int top, int right, int bottom)
+			public void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight,
+				int oldBottom)
 			{
-				super.onLayout(changed, left, top, right, bottom);
 				TiUIHelper.firePostLayoutEvent(proxy);
 			}
-			
+		});
+
+		spinner.setOnTouchListener(new View.OnTouchListener()
+		{
 			@Override
-			public boolean onTouchEvent(MotionEvent event) {
+			public boolean onTouch(View v, MotionEvent event) {
 				if (event.getAction() == MotionEvent.ACTION_UP) {
 					KrollDict data = new KrollDict();
 					data.put(TiC.PROPERTY_X, event.getX());
 					data.put(TiC.PROPERTY_Y, event.getY());
 					fireEvent(TiC.EVENT_CLICK, data);
 				}
-				return super.onTouchEvent(event);
+				return false;
 			}
-		};
+		});
+
 		setNativeView(spinner);
 		refreshNativeView();
 		preselectRows();
@@ -151,6 +183,13 @@ public class TiUINativePicker extends TiUIPicker
 		}
 		view.setSelection(rowIndex, animated);
 	}
+	
+	@Override
+	public void openPicker()
+	{
+		Spinner view = (Spinner) nativeView;
+		view.performClick();
+	};
 
 	@Override
 	public int getSelectedRowIndex(int columnIndex)

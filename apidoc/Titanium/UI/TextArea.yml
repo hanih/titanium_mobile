@@ -1,7 +1,18 @@
 ---
 name: Titanium.UI.TextArea
 summary: A multiline text field that supports editing and scrolling. 
-description: Use the <Titanium.UI.createTextArea> method or **&lt;TextArea&gt;** Alloy element to create a text area. 
+description: |
+    <table id="platformComparison">
+      <tr>
+        <td><img src="images/textarea/textarea_android.png" height="50" /></td>
+        <td><img src="images/textarea/textarea_ios.png" height="50" /></td>
+        <td><img src="images/textarea/textarea_mobileweb.png" height="50" /></td>
+        <td><img src="images/textarea/textarea_wp.png" height="50" /></td>
+      </tr>
+      <tr><th>Android</th><th>iOS</th><th>Mobile Web</th><th>Windows Phone</th></tr>
+    </table>
+
+    Use the <Titanium.UI.createTextArea> method or **&lt;TextArea&gt;** Alloy element to create a text area.
 extends: Titanium.UI.View
 since: "0.8"
 
@@ -61,15 +72,61 @@ properties:
     constants: Titanium.UI.KEYBOARD_APPEARANCE_*
     default: <Titanium.UI.KEYBOARD_APPEARANCE_DEFAULT>
     platforms: [iphone, ipad]
-    
-  - name: attributedString
-    summary: TextArea attributed string. 
-    description: |
-        The underlying attributed string drawn by the textArea, if set, the textArea ignores
-        the `value` property
-    type: Titanium.UI.iOS.AttributedString
+    deprecated:
+        since: "5.2.0"
+        notes: Use <Titanium.UI.TextArea.keyboardAppearance> instead.
+
+  - name: keyboardAppearance
+    summary: Determines the appearance of the keyboard displayed when this text area is focused.
+    type: Number
+    constants: Titanium.UI.KEYBOARD_APPEARANCE_*
+    default: <Titanium.UI.KEYBOARD_APPEARANCE_DEFAULT>
     platforms: [iphone, ipad]
-    since: 3.2.0
+
+  - name: attributedString
+    summary: TextArea attributed string.
+    description: |
+        The underlying attributed string drawn by the textArea. If set, avoid setting common attributes 
+        in textArea, such as `value`, `color` and `font`, as unexpected behaviors may result. 
+
+        Prior to Release 3.6.0, assign this property an object from the
+        <Titanium.UI.iOS.AttributedString> class.
+
+        Since Appcelerator CLI 4.1.0 (Alloy 1.7.0), for Alloy, you can use an `<AttributedString>`
+        element inside a `<TextArea>` element and set the text property as node text:
+
+            <Alloy>
+              <Window>
+                  <TextArea>
+                    <AttributedString>
+                        Alloy is great!
+                    </AttributedString>
+                  </TextArea>
+              </Window>
+            </Alloy>
+
+        Then set attributes in the TSS file:
+
+            "AttributedString" : {
+              attributes: [
+                {
+                  type: Ti.UI.ATTRIBUTE_FOREGROUND_COLOR,
+                  value: 'red',
+                  range: [0, 5]
+                },
+                {
+                  type: Ti.UI.ATTRIBUTE_UNDERLINES_STYLE,
+                  value: Ti.UI.ATTRIBUTE_UNDERLINE_STYLE_SINGLE,
+                  range: [9, 5]
+                }
+              ]
+            }
+    type: Titanium.UI.AttributedString
+    platforms: [android, iphone, ipad]
+    since:
+        android: 3.6.0
+        iphone: 3.2.0
+        ipad: 3.2.0
 
   - name: autocapitalization
     summary: Determines how text is capitalized during typing. 
@@ -81,14 +138,14 @@ properties:
   - name: autocorrect
     summary: Determines whether to automatically correct text entered into this text area.
     description: |
-        Set to `true` to enable automatic spelling correction.
+        Set to `true` to enable automatic spelling correction. On iOS 9+, this can be used to disable QuickType suggestions.
 
         If this property is not explicitly defined, it behaves as though it were set to `true`.
 
         On Android and iOS, the returned default value is undefined, and on Mobile Web, the returned
         default value is `false`, but all behave as if the value is `true`.
     type: Boolean
-    platforms: [android, iphone, ipad, mobileweb, tizen]
+    platforms: [android, iphone, ipad, mobileweb]
     
   - name: autoLink
     summary: Automatically convert text to clickable links. 
@@ -97,7 +154,7 @@ properties:
         
         Multiple autolink values can be combined with a bitwise OR. For example:
             
-            textArea.autoLink = AUTOLINK_MAP_ADDRESSES|AUTOLINK_PHONE_NUMBERS;
+            textArea.autoLink = Ti.UI.AUTOLINK_MAP_ADDRESSES|Ti.UI.AUTOLINK_PHONE_NUMBERS;
 
         Prior to Release 3.0, this field used platform-specific constants. These are now
         deprecated in favor of the `AUTOLINK` constants.
@@ -108,7 +165,7 @@ properties:
         
     type: Number
     constants: Titanium.UI.AUTOLINK_*
-    default: <Titanium.UI.iOS.AUTODETECT_NONE> in iOS, undefined in Android
+    default: <Titanium.UI.AUTOLINK_NONE>
     since: {android: "3.0.0"}
     platforms: [android, iphone, ipad]
     
@@ -135,11 +192,6 @@ properties:
     default: false
     platforms: [android]
     
-  - name: enabled
-    summary: Determines whether this field is enabled.
-    type: Boolean
-    default: true
-    
   - name: enableReturnKey
     summary: |
         Determines whether the return key is enabled automatically when there is text in this text 
@@ -149,7 +201,7 @@ properties:
         automatically enabled as soon as the user types any text in the area.
     type: Boolean
     default: false
-    exclude-platforms: [blackberry]
+
    
   - name: font
     summary: Font to use for text.
@@ -168,12 +220,32 @@ properties:
         section of wikipedia, to insert special characters and symbols.
     type: String
     default: No hint text.
-    platforms: [android, blackberry]
+    platforms: [android]
     
+  - name: hintTextColor
+    summary: Color of hint text that displays when field is empty.
+    platforms: [android]
+    since: 4.1.0
+    description: |
+        Hint text color in Android is determined by the theme of the application. By default, the
+        theme is `Theme.AppCompat` which is a Dark theme. When you create the background to be white,
+        the hint text color would also be white, hence not visible to the user. To change this, you can
+        edit the tiapp.xml file with another theme. Example as follows:
+
+            <android xmlns:android="http://schemas.android.com/apk/res/android">
+                <manifest>
+                    <application android:theme="@style/Theme.AppCompat.Light"/>
+                </manifest>
+            </android>
+
+        Another way to change the hint text color is to use this property and specify a color.
+    type: String
+    default: Default Android theme's hint text color.
+
   - name: handleLinks
     summary: Specifies if the text area should allow user interaction with the given URL in the given range of text.
     description: |
-        When the text is specified using an attributed string and the text has an attribute of type [ATTRIBUTE_LINK](Titanium.UI.iOS.ATTRIBUTE_LINK),
+        When the text is specified using an attributed string and the text has an attribute of type [ATTRIBUTE_LINK](Titanium.UI.ATTRIBUTE_LINK),
         this property controls if the system should handle that link automatically. Only valid on iOS 7 and above. 
     type: Boolean
     default: false
@@ -213,7 +285,7 @@ properties:
     type: Number
     constants: Titanium.UI.KEYBOARD_*
     default: <Titanium.UI.KEYBOARD_DEFAULT>
-    platforms: [android, iphone, ipad, blackberry]
+    platforms: [android, iphone, ipad]
     
   - name: maxLength
     summary: Maximum length of text field input. 
@@ -224,14 +296,20 @@ properties:
     type: Number
     since: {android: "3.0.0", iphone: "3.0.0", ipad: "3.0.0"}
     platforms: [android, iphone, ipad]
-    
+ 
+  - name: padding
+    summary: Sets the left and right padding of this TextArea. The text will always be vertically centered.
+    type: TextAreaPadding
+    platforms: [android, iphone, ipad]
+    since: {android: "6.0.0", iphone: "6.1.0", ipad: "6.1.0"}
+        
   - name: returnKeyType
     summary: |
         Specifies the text to display on the keyboard `Return` key when this text area is focused.
     type: Number
     constants: Titanium.UI.RETURNKEY_*
     default: <Titanium.UI.RETURNKEY_DEFAULT>
-    platforms: [iphone, ipad, blackberry]
+    platforms: [iphone, ipad]
 
   - name: scrollsToTop
     summary: Controls whether the scroll-to-top gesture is effective.
@@ -245,18 +323,26 @@ properties:
     default: true
     platforms: [iphone,ipad]
     since: 2.1.2
-    
+
+  - name: showUndoRedoActions
+    summary: Determinates if the undo and redo buttons on the left side of the keyboard should be displayed or not. Only valid on iOS9 and above. This property can only be set upon creation.
+    type: Boolean
+    default: true
+    platforms: [ipad]
+    osver: {ios: {min: "9.0"}}
+    since: 5.0.0
+
   - name: suppressReturn
     summary: Determines if the return key should be suppressed during text entry.
     type: Boolean
-    platforms: [iphone, ipad, mobileweb, tizen]
+    platforms: [iphone, ipad, mobileweb]
     
   - name: textAlign
     summary: Text alignment within this text area.
     type: [String, Number]
     constants: Titanium.UI.TEXT_ALIGNMENT_*
     default: <Titanium.UI.TEXT_ALIGNMENT_LEFT>
-    exclude-platforms: [blackberry]
+
     
   - name: value
     summary: Value of this text area, which may be set programmatically and modified by the user.
@@ -320,7 +406,7 @@ events:
   - name: link
     summary: Fired when user interacts with a URL in the text area. See [handleLinks](Titanium.UI.TextArea.handleLinks).
     description: |
-        The URL is set using the [ATTRIBUTE_LINK](Titanium.UI.iOS.ATTRIBUTE_LINK) property on the [attributedString](Titanium.UI.TextArea.attributedString). 
+        The URL is set using the [ATTRIBUTE_LINK](Titanium.UI.ATTRIBUTE_LINK) property on the [attributedString](Titanium.UI.TextArea.attributedString). 
         This event is fired even in handleLinks is set to false. Only valid on iOS7 and above.
     properties:
       - name: url
@@ -386,20 +472,20 @@ examples:
         Example using a custom keyboard toolbar:
         
             var send = Ti.UI.createButton({
-                style : Ti.UI.iPhone.SystemButtonStyle.DONE,
+                style : Ti.UI.iOS.SystemButtonStyle.DONE,
                 title : 'Send'
             });
             
             var camera = Ti.UI.createButton({
-                systemButton : Ti.UI.iPhone.SystemButton.CAMERA
+                systemButton : Ti.UI.iOS.SystemButton.CAMERA
             });
             
             var cancel = Ti.UI.createButton({
-                systemButton : Ti.UI.iPhone.SystemButton.CANCEL
+                systemButton : Ti.UI.iOS.SystemButton.CANCEL
             });
             
             var flexSpace = Ti.UI.createButton({
-                systemButton : Ti.UI.iPhone.SystemButton.FLEXIBLE_SPACE
+                systemButton : Ti.UI.iOS.SystemButton.FLEXIBLE_SPACE
             });
             
             var textarea = Ti.UI.createTextArea({
@@ -439,3 +525,24 @@ properties:
   - name: length
     summary: Number of characters selected.
     type: Number
+---    
+name: TextAreaPadding
+summary: Dictionary object of parameters for the <Titanium.UI.TextArea.padding>  that describes the padding
+since: {android: "6.0.0", iphone: "6.1.0", ipad: "6.1.0"}
+platforms: [android, iphone, ipad]
+properties:
+  - name: left
+    type: Number
+    summary: Left padding
+    
+  - name: right
+    type: Number
+    summary: Right padding
+
+  - name: top
+    type: Number
+    summary: Top padding
+
+  - name: bottom
+    type: Number
+    summary: Bottom padding

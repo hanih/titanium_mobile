@@ -12,7 +12,7 @@
 
 @class TiUITabGroupProxy;
 
-@interface TiUITabProxy : TiViewProxy<TiTab,UINavigationControllerDelegate,TiOrientationController> {
+@interface TiUITabProxy : TiViewProxy<TiTab,UINavigationControllerDelegate,UIGestureRecognizerDelegate,TiOrientationController> {
 @private
 	UINavigationController *controller;
 	TiWindowProxy *rootWindow;
@@ -21,8 +21,7 @@
 	TiUITabGroupProxy *tabGroup;
     
 	NSMutableArray* controllerStack;
-    
-	BOOL opening;
+	
 	BOOL systemTab;
 	BOOL transitionIsAnimating;
 	BOOL transitionWithGesture;
@@ -44,6 +43,7 @@
 -(void)setIcon:(id)title;
 -(void)setBadge:(id)title;
 -(void)setActive:(id)value;
+-(void)setIconInsets:(id)args;
 
 - (void)handleWillBlur;
 - (void)handleDidBlur:(NSDictionary *)event;

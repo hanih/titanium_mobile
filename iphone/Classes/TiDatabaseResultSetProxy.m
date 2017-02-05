@@ -87,7 +87,7 @@
         BOOL valid = NO;
         BOOL isString = [obj isKindOfClass:[NSString class]];
         if (!isString || (isString && [self isParseableString:obj ofType:type])) {
-            result = NUMINT([TiUtils intValue:obj def:NSNotFound valid:&valid]);
+            result = NUMINT([TiUtils intValue:obj def:0 valid:&valid]);
         }
         if (!valid) {
             [self throwException:TiExceptionInvalidType subreason:[NSString stringWithFormat:@"Couldn't cast from %@ to int", [obj class]] location:CODELOCATION];
@@ -153,7 +153,7 @@
 	{
 	    id result = [results objectForColumnIndex:[TiUtils intValue:[args objectAtIndex:0]]];
 		if ([result isKindOfClass:[NSData class]]) {
-			result = [[[TiBlob alloc] initWithData:result mimetype:@"application/octet-stream"] autorelease];
+			result = [[[TiBlob alloc] _initWithPageContext:[self pageContext] andData:result mimetype:@"application/octet-stream"] autorelease];
 		}
 
 		if([args count] > 1) {
@@ -173,7 +173,7 @@
 	{
 		id result = [results objectForColumn:[TiUtils stringValue:[args objectAtIndex:0]]];
 		if ([result isKindOfClass:[NSData class]]) {
-			result = [[[TiBlob alloc] initWithData:result mimetype:@"application/octet-stream"] autorelease];
+			result = [[[TiBlob alloc] _initWithPageContext:[self pageContext] andData:result mimetype:@"application/octet-stream"] autorelease];
 		}
  	    if([args count] > 1) {
 		   //cast result on the way out if type constant was passed
@@ -190,8 +190,8 @@
 	ENSURE_SINGLE_ARG(args,NSObject);
 	if (results != nil)
 	{
-		int requestedIndex = [TiUtils intValue:args def:NSNotFound];
-		if (requestedIndex == NSNotFound)
+		int requestedIndex = [TiUtils intValue:args def:INT_MAX];
+		if (requestedIndex == INT_MAX)
 		{
 			[self throwException:TiExceptionInvalidType subreason:nil location:CODELOCATION];
 		}
@@ -208,7 +208,7 @@
 {
 	if (results!=nil)
 	{
-		return NUMINT([[results fieldNames] count]);
+		return NUMUINTEGER([[results fieldNames] count]);
 	}
 	return NUMINT(0);
 }
@@ -232,7 +232,6 @@
 		}
 		// we cache it
 		rowCount = [results fullCount];
-		reset = NO;
 		[results next];
 		return NUMINT(rowCount); 
 	}

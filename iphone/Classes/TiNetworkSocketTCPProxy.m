@@ -46,6 +46,11 @@ static NSString* ARG_KEY = @"arg";
 
 -(void)dealloc
 {
+    RELEASE_TO_NIL(connected);
+    RELEASE_TO_NIL(error);
+    RELEASE_TO_NIL(closed);
+    RELEASE_TO_NIL(accepted);
+    RELEASE_TO_NIL(host);
     // Calls _destroy
     [super dealloc];
 }
@@ -165,7 +170,7 @@ static NSString* ARG_KEY = @"arg";
 			NSString * message = [TiUtils messageFromError:err];
 			NSMutableDictionary * event = [TiUtils dictionaryWithCode:[err code] message:message];
 			[event setObject:self forKey:@"socket"];
-			[event setObject:NUMINT([err code]) forKey:@"errorCode"];
+			[event setObject:NUMINTEGER([err code]) forKey:@"errorCode"];
             [self _fireEventToListener:@"error" withObject:event listener:error thisObject:self];
         }
         
@@ -284,12 +289,12 @@ static NSString* ARG_KEY = @"arg";
 #pragma mark Public API : Functions
 
 // Used to bump API calls onto the socket thread if necessary
-#define ENSURE_SOCKET_THREAD(f,x) \
+#define ENSURE_SOCKET_THREAD(f,x,w) \
 if (socketThread == nil) { \
 return; \
 } \
 if ([NSThread currentThread] != socketThread) { \
-[self performSelector:@selector(f:) onThread:socketThread withObject:x waitUntilDone:YES]; \
+[self performSelector:@selector(f:) onThread:socketThread withObject:x waitUntilDone:w]; \
 return; \
 } \
 
@@ -368,7 +373,7 @@ NSCondition* temp = [condition retain]; \
 
     NSDictionary* args = nil;
     ENSURE_ARG_OR_NIL_AT_INDEX(args, arg, 0, NSDictionary);
-    ENSURE_SOCKET_THREAD(accept,arg);
+    ENSURE_SOCKET_THREAD(accept,arg,YES);
     [acceptArgs setValue:arg forKey:ARG_KEY];
     
     CFSocketRef sock = [socket getCFSocket];
@@ -387,7 +392,7 @@ NSCondition* temp = [condition retain]; \
         return;
     }
     
-    ENSURE_SOCKET_THREAD(close,_void);
+    ENSURE_SOCKET_THREAD(close,_void,NO);
     
     [self cleanupSocket];
     internalState = SOCKET_CLOSED;
@@ -430,7 +435,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     return NUMBOOL(internalState & SOCKET_CONNECTED);
 }
 
--(int)readToBuffer:(TiBuffer*)buffer offset:(int)offset length:(int)length callback:(KrollCallback *)callback
+-(NSInteger)readToBuffer:(TiBuffer*)buffer offset:(NSInteger)offset length:(NSInteger)length callback:(KrollCallback *)callback
 {
     // TODO: Put this in the write()/read() wrappers when they're being called consistently, blah blah blah
     if ([[buffer data] length] == 0 && length != 0) {
@@ -489,7 +494,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     return 0; // Bogus return value; the real value is returned when we finish the read
 }
 
--(int)writeFromBuffer:(TiBuffer*)buffer offset:(int)offset length:(int)length callback:(KrollCallback *)callback
+-(NSInteger)writeFromBuffer:(TiBuffer*)buffer offset:(NSInteger)offset length:(NSInteger)length callback:(KrollCallback *)callback
 {
     // TODO: Put this in the write()/read() wrappers when they're being called consistently, blah blah blah
     if ([[buffer data] length] == 0) {
@@ -539,7 +544,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
         int tag = -1;
         if (callback != nil) {
             tag = asynchTagCount;
-            NSDictionary* asynchInfo = [NSDictionary dictionaryWithObjectsAndKeys:NUMINT([subdata length]),@"bytesProcessed",callback,@"callback", nil];
+            NSDictionary* asynchInfo = [NSDictionary dictionaryWithObjectsAndKeys:NUMUINTEGER([subdata length]),@"bytesProcessed",callback,@"callback", nil];
             [operationInfo setObject:asynchInfo forKey:NUMINT(tag)];
             asynchTagCount = (asynchTagCount + 1) % INT_MAX;
         }
@@ -550,7 +555,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     }
 }
 
--(int)writeToStream:(id<TiStreamInternal>)output chunkSize:(int)size callback:(KrollCallback *)callback
+-(NSInteger)writeToStream:(id<TiStreamInternal>)output chunkSize:(NSInteger)size callback:(KrollCallback *)callback
 {
     if ([NSThread currentThread] != socketThread) {
         NSInvocation* invocation = [NSInvocation invocationWithMethodSignature:[self methodSignatureForSelector:@selector(writeToStream:chunkSize:callback:)]];
@@ -580,7 +585,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     }
     else {
         int tag = asynchTagCount;
-        NSDictionary* info = [NSDictionary dictionaryWithObjectsAndKeys:output,@"destination",NUMINT(size),@"chunkSize",callback,@"callback",NUMINT(TO_STREAM),@"type", nil];
+        NSDictionary* info = [NSDictionary dictionaryWithObjectsAndKeys:output,@"destination",NUMUINTEGER(size),@"chunkSize",callback,@"callback",NUMINT(TO_STREAM),@"type", nil];
         [operationInfo setObject:info forKey:NUMINT(tag)];
         asynchTagCount = (asynchTagCount + 1) % INT_MAX;
         
@@ -594,7 +599,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     }
 }
 
--(void)pumpToCallback:(KrollCallback *)callback chunkSize:(int)size asynch:(BOOL)asynch
+-(void)pumpToCallback:(KrollCallback *)callback chunkSize:(NSInteger)size asynch:(BOOL)asynch
 {
     if ([NSThread currentThread] != socketThread) {
         NSInvocation* invocation = [NSInvocation invocationWithMethodSignature:[self methodSignatureForSelector:@selector(pumpToCallback:chunkSize:asynch:)]];
@@ -622,7 +627,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     }
     else {
         int tag = asynchTagCount;
-        NSDictionary* info = [NSDictionary dictionaryWithObjectsAndKeys:NUMINT(size),@"chunkSize",callback,@"callback",NUMINT(TO_CALLBACK),@"type", nil];
+        NSDictionary* info = [NSDictionary dictionaryWithObjectsAndKeys:NUMUINTEGER(size),@"chunkSize",callback,@"callback",NUMINT(TO_CALLBACK),@"type", nil];
         [operationInfo setObject:info forKey:NUMINT(tag)];
         asynchTagCount = (asynchTagCount + 1) % INT_MAX;
         
@@ -722,7 +727,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
             KrollCallback* callback = [info valueForKey:@"callback"];
 			NSString * message = [TiUtils messageFromError:err];
 			NSMutableDictionary * event = [TiUtils dictionaryWithCode:[err code] message:message];
-			[event setObject:NUMINT([err code]) forKey:@"errorState"];
+			[event setObject:NUMINTEGER([err code]) forKey:@"errorState"];
 			[event setObject:message forKey:@"errorDescription"];
             [self _fireEventToListener:@"error" withObject:event listener:callback thisObject:nil];
         }
@@ -730,7 +735,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
         if (error != nil) {
 			NSString * message = [TiUtils messageFromError:err];
 			NSMutableDictionary * event = [TiUtils dictionaryWithCode:[err code] message:message];
-			[event setObject:NUMINT([err code]) forKey:@"errorCode"];
+			[event setObject:NUMINTEGER([err code]) forKey:@"errorCode"];
 			[event setObject:self forKey:@"socket"];
             [self _fireEventToListener:@"error" withObject:event listener:error thisObject:self];
         }
@@ -760,12 +765,14 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
                     id<TiStreamInternal> stream = [info valueForKey:@"destination"];
 					[event setObject:self forKey:@"fromStream"];
 					[event setObject:stream forKey:@"toStream"];
+					break;
                 }
                 case TO_CALLBACK: {
                     name = @"pump";
 					[event setObject:self forKey:@"source"];
-					[event setObject:NUMINT(readDataLength) forKey:@"totalBytesProcessed"];
+					[event setObject:NUMUINTEGER(readDataLength) forKey:@"totalBytesProcessed"];
 					[event setObject:[NSNull null] forKey:@"buffer"];
+					break;
                 }
                 default: {
                     name = @"write";
@@ -792,14 +799,14 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
 
     // Result of asynch write
     if (tag > -1) {
-        NSDictionary* info = [operationInfo objectForKey:NUMINT(tag)];
+        NSDictionary* info = [operationInfo objectForKey:NUMLONG(tag)];
         KrollCallback* callback = [info valueForKey:@"callback"];
 		NSMutableDictionary* event = [TiUtils dictionaryWithCode:0 message:nil];
 		[event setObject:[info valueForKey:@"bytesProcessed"] forKey:@"bytesProcessed"];
 		[event setObject:NUMINT(0) forKey:@"errorState"];
 		[event setObject:@"" forKey:@"errorDescription"];
         [self _fireEventToListener:@"write" withObject:event listener:callback thisObject:self];
-        [operationInfo removeObjectForKey:NUMINT(tag)];
+        [operationInfo removeObjectForKey:NUMLONG(tag)];
     } 
     else {
         // Signal the IO condition
@@ -817,7 +824,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
     
     // Specialized operation
     if (tag > -1) {
-        NSDictionary* info = [operationInfo objectForKey:NUMINT(tag)];
+        NSDictionary* info = [operationInfo objectForKey:NUMLONG(tag)];
         ReadDestination type = [[info objectForKey:@"type"] intValue];
         switch (type) {
             case TO_BUFFER: {
@@ -826,7 +833,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
 
 				NSMutableDictionary* event = [TiUtils dictionaryWithCode:0 message:nil];
 				[event setObject:buffer forKey:@"buffer"];
-				[event setObject:NUMINT([data length]) forKey:@"bytesProcessed"];
+				[event setObject:NUMUINTEGER([data length]) forKey:@"bytesProcessed"];
 				[event setObject:NUMINT(0) forKey:@"errorState"];
 				[event setObject:@"" forKey:@"errorDescription"];
                 [self _fireEventToListener:@"read" withObject:event listener:callback thisObject:self];
@@ -835,7 +842,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
             case TO_STREAM: {
                 // Perform the write to stream
                 id<TiStreamInternal> stream = [info valueForKey:@"destination"];
-                int size = [TiUtils intValue:[info valueForKey:@"chunkSize"]];
+                NSInteger size = [TiUtils intValue:[info valueForKey:@"chunkSize"]];
                 KrollCallback* callback = [info valueForKey:@"callback"];
                 
                 TiBuffer* tempBuffer = [[[TiBuffer alloc] _initWithPageContext:[self executionContext]] autorelease];
@@ -852,7 +859,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
             case TO_CALLBACK: {
                 // Perform the pump to callback
                 KrollCallback* callback = [info valueForKey:@"callback"];
-                int size = [TiUtils intValue:[info valueForKey:@"chunkSize"]];
+                NSInteger size = [TiUtils intValue:[info valueForKey:@"chunkSize"]];
                 
                 TiBuffer* tempBuffer = [[[TiBuffer alloc] _initWithPageContext:[self executionContext]] autorelease];
                 [tempBuffer setData:[NSMutableData dataWithData:data]];
@@ -861,8 +868,8 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
 				NSMutableDictionary* event = [TiUtils dictionaryWithCode:0 message:nil];
 				[event setObject:self forKey:@"source"];
 				[event setObject:tempBuffer forKey:@"buffer"];
-				[event setObject:NUMINT([data length]) forKey:@"bytesProcessed"];
-				[event setObject:NUMINT(readDataLength) forKey:@"totalBytesProcessed"];
+				[event setObject:NUMUINTEGER([data length]) forKey:@"bytesProcessed"];
+				[event setObject:NUMUINTEGER(readDataLength) forKey:@"totalBytesProcessed"];
 				[event setObject:NUMINT(0) forKey:@"errorState"];
 				[event setObject:@"" forKey:@"errorDescription"];
                 [self _fireEventToListener:@"pump" withObject:event listener:callback thisObject:nil];
@@ -872,7 +879,7 @@ TYPESAFE_SETTER(setError, error, KrollCallback)
                 break;
             }
         }
-        [operationInfo removeObjectForKey:NUMINT(tag)];
+        [operationInfo removeObjectForKey:NUMLONG(tag)];
     }
     else {
         // Only signal the condition for your standard blocking read

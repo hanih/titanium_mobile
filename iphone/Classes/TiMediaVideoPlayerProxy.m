@@ -1,11 +1,10 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
-#ifdef USE_TI_MEDIA
-
+#ifdef USE_TI_MEDIAVIDEOPLAYER
 
 #import <AudioToolbox/AudioToolbox.h>
 #import <QuartzCore/QuartzCore.h>
@@ -43,7 +42,6 @@
 
 
 @interface TiMediaVideoPlayerProxy ()
-@property(nonatomic,readwrite,copy)	NSNumber*	movieControlStyle;
 @property(nonatomic,readwrite,copy)	NSNumber*	mediaControlStyle;
 @end
 
@@ -320,31 +318,6 @@ NSArray* moviePlayerKeys = nil;
     }
 }
 
-// < 3.2 functions for controls - deprecated
--(void)setMovieControlMode:(NSNumber *)value
-{
-    DEPRECATED_REPLACED(@"Media.VideoPlayer.movieControlMode", @"1.8.0", @"Ti.Media.VideoPlayer.mediaControlStyle");    
-	[self setMediaControlStyle:value];
-}
-
--(NSNumber*)movieControlMode
-{
-    DEPRECATED_REPLACED(@"Media.VideoPlayer.movieControlMode", @"1.8.0", @"Ti.Media.VideoPlayer.mediaControlStyle");        
-	return [self mediaControlStyle];
-}
-
--(void)setMovieControlStyle:(NSNumber *)value
-{
-    DEPRECATED_REPLACED(@"Media.VideoPlayer.movieControlStyle", @"1.8.0", @"Ti.Media.VideoPlayer.mediaControlStyle");
-    [self setMediaControlStyle:value];
-}
-
--(NSNumber*)movieControlStyle
-{
-    DEPRECATED_REPLACED(@"Media.VideoPlayer.movieControlStyle", @"1.8.0", @"Ti.Media.VideoPlayer.mediaControlStyle");
-    return [self mediaControlStyle];
-}
-
 -(void)setMediaControlStyle:(NSNumber *)value
 {
 	if (movie != nil) {
@@ -369,7 +342,7 @@ NSArray* moviePlayerKeys = nil;
 {
 	if ([media_ isKindOfClass:[TiFile class]])
 	{
-		[self setUrl:[NSURL fileURLWithPath:[media_ path]]];
+		[self setUrl:[NSURL fileURLWithPath:[(TiFile*)media_ path]]];
 	}
 	else if ([media_ isKindOfClass:[TiBlob class]])
 	{
@@ -470,41 +443,32 @@ NSArray* moviePlayerKeys = nil;
 
 -(NSNumber*)useApplicationAudioSession
 {
-	if (movie != nil) {
-		return NUMBOOL([movie useApplicationAudioSession]);
-	}
-	else {
-		RETURN_FROM_LOAD_PROPERTIES(@"useApplicationAudioSession",NUMBOOL(YES));
-	}
+    DebugLog(@"[WARN] Deprecated property useApplicationAudioSession; Setting this property has no effect'");
+    return NUMBOOL(YES);
 }
 
 -(void)setUseApplicationAudioSession:(id)value
 {
-	if (movie != nil) {
-		[movie setUseApplicationAudioSession:[TiUtils boolValue:value]];
-	}
-	else {
-		[loadProperties setValue:value forKey:@"useApplicationAudioSession"];
-	}
+    DebugLog(@"[WARN] Deprecated property useApplicationAudioSession; Setting this property has no effect'");
 }
 
 -(NSNumber *)volume
 {
-	__block double volume = 1.0;
+	__block float volume = 1.0;
 	TiThreadPerformOnMainThread(^{
-		volume = (double)[[MPMusicPlayerController applicationMusicPlayer] volume];
+        volume = [TiUtils volumeFromObject:[MPMusicPlayerController applicationMusicPlayer] default:1.0];
 	}, YES);
 	
-	return NUMDOUBLE(volume);
+	return NUMFLOAT(volume);
 }
 
 -(void)setVolume:(NSNumber *)newVolume
 {
-	double volume = [TiUtils doubleValue:newVolume def:-1.0];
+	float volume = [TiUtils floatValue:newVolume def:-1.0];
     volume = MAX(0.0, MIN(volume, 1.0));
 	TiThreadPerformOnMainThread(^{
-		[[MPMusicPlayerController applicationMusicPlayer] setVolume:volume];
-	}, NO);
+        [TiUtils setVolume:volume onObject:[MPMusicPlayerController applicationMusicPlayer]];
+	}, YES);
 }
 
 -(void)cancelAllThumbnailImageRequests:(id)value
@@ -531,18 +495,6 @@ NSArray* moviePlayerKeys = nil;
             [movie requestThumbnailImagesAtTimes:array timeOption:[option intValue]];
         }, NO);
     }
-}
-
--(TiBlob*)thumbnailImageAtTime:(id)args
-{
-	NSNumber *time = [args objectAtIndex:0];
-	NSNumber *options = [args objectAtIndex:1];
-	TiBlob *blob = [[[TiBlob alloc] init] autorelease];
-	TiThreadPerformOnMainThread(^{
-		UIImage *image = [movie thumbnailImageAtTime:[time doubleValue] timeOption:[options intValue]];
-		[blob setImage:image];
-	}, YES);
-	return blob;
 }
 
 -(void)setBackgroundColor:(id)color
@@ -897,7 +849,7 @@ NSArray* moviePlayerKeys = nil;
 		if (value==nil)
 		{
 			UIImage *image = [userinfo valueForKey:MPMoviePlayerThumbnailImageKey];
-			TiBlob *blob = [[[TiBlob alloc] initWithImage:image] autorelease];
+			TiBlob *blob = [[[TiBlob alloc] _initWithPageContext:[self pageContext] andImage:image] autorelease];
 			[event setObject:blob forKey:@"image"];
 		}
 		[event setObject:[userinfo valueForKey:MPMoviePlayerThumbnailTimeKey] forKey:@"time"];
@@ -1065,6 +1017,8 @@ NSArray* moviePlayerKeys = nil;
 		case MPMoviePlaybackStatePlaying:
 			playing = YES;
 			break;
+        default:
+            break;
 	}
 }
 

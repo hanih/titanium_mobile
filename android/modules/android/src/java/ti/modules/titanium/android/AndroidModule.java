@@ -6,15 +6,19 @@
  */
 package ti.modules.titanium.android;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import android.content.pm.PackageManager;
+import android.os.Build;
+import org.appcelerator.kroll.KrollFunction;
 import org.appcelerator.kroll.KrollModule;
 import org.appcelerator.kroll.KrollRuntime;
 import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiApplication;
+import org.appcelerator.titanium.TiBaseActivity;
 import org.appcelerator.titanium.TiC;
-import org.appcelerator.titanium.TiContext;
 import org.appcelerator.titanium.proxy.IntentProxy;
 import org.appcelerator.titanium.proxy.RProxy;
 import org.appcelerator.titanium.proxy.ServiceProxy;
@@ -26,6 +30,7 @@ import android.app.ActivityManager.RunningServiceInfo;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.support.v4.app.NotificationCompat;
 import android.support.v7.app.ActionBar;
 import android.content.Context;
 import android.content.Intent;
@@ -34,6 +39,7 @@ import android.content.pm.ActivityInfo;
 import android.media.AudioManager;
 import android.view.MenuItem;
 
+@SuppressWarnings("deprecation")
 @Kroll.module
 public class AndroidModule extends KrollModule
 {
@@ -223,6 +229,28 @@ public class AndroidModule extends KrollModule
 	@Kroll.constant public static final int FLAG_ONLY_ALERT_ONCE = Notification.FLAG_ONLY_ALERT_ONCE;
 	@Kroll.constant public static final int FLAG_SHOW_LIGHTS = Notification.FLAG_SHOW_LIGHTS;
 	@Kroll.constant public static final int STREAM_DEFAULT = Notification.STREAM_DEFAULT;
+	@Kroll.constant public static final int VISIBILITY_PRIVATE = NotificationCompat.VISIBILITY_PRIVATE;
+	@Kroll.constant public static final int VISIBILITY_PUBLIC = NotificationCompat.VISIBILITY_PUBLIC;
+	@Kroll.constant public static final int VISIBILITY_SECRET = NotificationCompat.VISIBILITY_SECRET;
+	@Kroll.constant public static final int PRIORITY_HIGH = NotificationCompat.PRIORITY_HIGH;
+	@Kroll.constant public static final int PRIORITY_MAX = NotificationCompat.PRIORITY_MAX;
+	@Kroll.constant public static final int PRIORITY_DEFAULT = NotificationCompat.PRIORITY_DEFAULT;
+	@Kroll.constant public static final int PRIORITY_LOW = NotificationCompat.PRIORITY_LOW;
+	@Kroll.constant public static final int PRIORITY_MIN = NotificationCompat.PRIORITY_MIN;
+	@Kroll.constant public static final String CATEGORY_ALARM = NotificationCompat.CATEGORY_ALARM;
+	@Kroll.constant public static final String CATEGORY_CALL = NotificationCompat.CATEGORY_CALL;
+	@Kroll.constant public static final String CATEGORY_EMAIL = NotificationCompat.CATEGORY_EMAIL;
+	@Kroll.constant public static final String CATEGORY_ERROR = NotificationCompat.CATEGORY_ERROR;
+	@Kroll.constant public static final String CATEGORY_EVENT = NotificationCompat.CATEGORY_EVENT;
+	@Kroll.constant public static final String CATEGORY_MESSAGE = NotificationCompat.CATEGORY_MESSAGE;
+	@Kroll.constant public static final String CATEGORY_PROGRESS = NotificationCompat.CATEGORY_PROGRESS;
+	@Kroll.constant public static final String CATEGORY_PROMO = NotificationCompat.CATEGORY_PROMO;
+	@Kroll.constant public static final String CATEGORY_RECOMMENDATION = NotificationCompat.CATEGORY_RECOMMENDATION;
+	@Kroll.constant public static final String CATEGORY_SERVICE = NotificationCompat.CATEGORY_SERVICE;
+	@Kroll.constant public static final String CATEGORY_SOCIAL = NotificationCompat.CATEGORY_SOCIAL;
+	@Kroll.constant public static final String CATEGORY_STATUS = NotificationCompat.CATEGORY_STATUS;
+	@Kroll.constant public static final String CATEGORY_TRANSPORT = NotificationCompat.CATEGORY_TRANSPORT;
+
 
 	@Kroll.constant public static final int START_NOT_STICKY = Service.START_NOT_STICKY;
 	@Kroll.constant public static final int START_REDELIVER_INTENT = Service.START_REDELIVER_INTENT;
@@ -239,21 +267,17 @@ public class AndroidModule extends KrollModule
 	@Kroll.constant public static final int SHOW_AS_ACTION_IF_ROOM = MenuItem.SHOW_AS_ACTION_IF_ROOM;
 	@Kroll.constant public static final int SHOW_AS_ACTION_NEVER = MenuItem.SHOW_AS_ACTION_NEVER;
 	@Kroll.constant public static final int SHOW_AS_ACTION_WITH_TEXT = MenuItem.SHOW_AS_ACTION_WITH_TEXT;
-	
+
 	@Kroll.constant public static final int NAVIGATION_MODE_LIST = ActionBar.NAVIGATION_MODE_LIST;
 	@Kroll.constant public static final int NAVIGATION_MODE_STANDARD = ActionBar.NAVIGATION_MODE_STANDARD;
 	@Kroll.constant public static final int NAVIGATION_MODE_TABS = ActionBar.NAVIGATION_MODE_TABS;
 
 	protected RProxy r;
+	private static final int REQUEST_CODE = 99;
 
 	public AndroidModule()
 	{
 		super();
-	}
-
-	public AndroidModule(TiContext tiContext)
-	{
-		this();
 	}
 
 	@Kroll.method
@@ -320,6 +344,42 @@ public class AndroidModule extends KrollModule
 		} else {
 			Log.w(TAG, "Application instance no longer available. Unable to stopService.");
 		}
+	}
+
+	@Kroll.method
+	public boolean hasPermission(String permission) {
+		if (Build.VERSION.SDK_INT < 23) {
+			return true;
+		}
+		Activity currentActivity  = TiApplication.getInstance().getCurrentActivity();
+		if (currentActivity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+			return true;
+		}
+		return false;
+	}
+
+	@Kroll.method
+	public void requestPermissions(String[] permissions, @Kroll.argument(optional=true)KrollFunction permissionCallback) {
+		if (Build.VERSION.SDK_INT < 23) {
+			return;
+		}
+		Activity currentActivity  = TiApplication.getInstance().getCurrentActivity();
+		ArrayList<String> filteredPermissions = new ArrayList<String>();
+		//filter out granted permissions
+		for (int i = 0; i < permissions.length; ++i) {
+			String perm = permissions[i];
+			if (currentActivity.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) {
+				continue;
+			}
+			filteredPermissions.add(perm);
+		}
+
+		if (filteredPermissions.size() == 0) {
+			Log.w(TAG, "Permission(s) already granted");
+			return;
+		}
+		TiBaseActivity.registerPermissionRequestCallback(REQUEST_CODE, permissionCallback, getKrollObject());
+		currentActivity.requestPermissions(filteredPermissions.toArray(new String[filteredPermissions.size()]), REQUEST_CODE);
 	}
 
 	@Kroll.method

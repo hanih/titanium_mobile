@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -30,22 +30,27 @@
     //Downside -> No touch events from pickerrow or its children
     //Upside -> It works and is performant. Accessibility is configured on the delegate
     
-    NSString *title = [self valueForKey:@"title"];
+    NSString *title = [TiUtils stringValue:[self valueForKey:@"title"]];
+    WebFont *pickerFont = [TiUtils fontValue:[self valueForKey:@"font"] def:[WebFont defaultFont]];
     if (title!=nil) {
         UILabel *pickerLabel = nil;
 		
         if ([theView isMemberOfClass:[UILabel class]]) {
             pickerLabel = (UILabel*)theView;
         }
-
+		
         if (pickerLabel == nil) {
             pickerLabel = [[[UILabel alloc] initWithFrame:theFrame] autorelease];
-            [pickerLabel setTextAlignment:UITextAlignmentLeft];
+            [pickerLabel setTextAlignment:NSTextAlignmentLeft];
             [pickerLabel setBackgroundColor:[UIColor clearColor]];
-            float fontSize = [TiUtils floatValue:[self valueForUndefinedKey:@"fontSize"] def:18.0];
-            [pickerLabel setFont:[UIFont boldSystemFontOfSize:fontSize]];
+            [pickerLabel setFont:[pickerFont font]];
         }
         [pickerLabel setText:title];
+        id ourColor = [self valueForKey:@"color"];
+        if (ourColor) {
+            UIColor* color = [[TiUtils colorValue:ourColor] color];
+            pickerLabel.textColor = color;
+        }
         return pickerLabel;
     }
     else
@@ -55,8 +60,14 @@
             CGSize size = myview.bounds.size;
             if (CGSizeEqualToSize(size, CGSizeZero) || size.width==0 || size.height==0)
             {
+#ifndef TI_USE_AUTOLAYOUT
                 CGFloat width = [self autoWidthForSize:CGSizeMake(1000,1000)];
                 CGFloat height = [self autoHeightForSize:CGSizeMake(width,0)];
+#else
+                CGSize s = [[self view] sizeThatFits:CGSizeMake(1000,1000)];
+                CGFloat width = s.width;
+                CGFloat height = s.height;
+#endif
                 if (width > 0 && height > 0)
                 {
                     size = CGSizeMake(width, height);

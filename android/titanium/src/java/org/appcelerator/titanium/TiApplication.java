@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -34,6 +34,7 @@ import org.appcelerator.kroll.common.TiMessenger;
 import org.appcelerator.kroll.util.KrollAssetHelper;
 import org.appcelerator.kroll.util.TiTempFileHelper;
 import org.appcelerator.titanium.analytics.TiAnalyticsEventFactory;
+import org.appcelerator.titanium.util.TiBlobLruCache;
 import org.appcelerator.titanium.util.TiFileHelper;
 import org.appcelerator.titanium.util.TiImageLruCache;
 import org.appcelerator.titanium.util.TiPlatformHelper;
@@ -53,11 +54,12 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Looper;
+import android.support.multidex.MultiDex;
 import android.util.DisplayMetrics;
 import android.view.accessibility.AccessibilityManager;
 
-import com.appcelerator.analytics.APSAnalytics;
-import com.appcelerator.analytics.APSAnalytics.DeployType;
+import com.appcelerator.aps.APSAnalytics;
+import com.appcelerator.aps.APSAnalytics.DeployType;
 
 /**
  * The main application entry point for all Titanium applications and services.
@@ -108,6 +110,7 @@ public abstract class TiApplication extends Application implements KrollApplicat
 	protected ITiAppInfo appInfo;
 	protected TiStylesheet stylesheet;
 	protected HashMap<String, WeakReference<KrollModule>> modules;
+	protected String[] filteredAnalyticsEvents;
 
 	public static AtomicBoolean isActivityTransition = new AtomicBoolean(false);
 	protected static ArrayList<ActivityTransitionListener> activityTransitionListeners = new ArrayList<ActivityTransitionListener>();
@@ -338,7 +341,7 @@ public abstract class TiApplication extends Application implements KrollApplicat
 		}
 	}
 
-	private void loadAppProperties() {
+	public void loadAppProperties() {
 		// Load the JSON file:
 		String appPropertiesString = KrollAssetHelper.readAsset("Resources/_app_props_.json");
 		if (appPropertiesString != null) {
@@ -348,6 +351,12 @@ public abstract class TiApplication extends Application implements KrollApplicat
 				Log.e(TAG, "Unable to load app properties.");
 			}
 		}
+	}
+
+	@Override
+	protected void attachBaseContext(Context base) {
+		super.attachBaseContext(base);
+		MultiDex.install(this);
 	}
 
 	@Override
@@ -392,6 +401,7 @@ public abstract class TiApplication extends Application implements KrollApplicat
 	public void onLowMemory ()
 	{
 		// Release all the cached images
+		TiBlobLruCache.getInstance().evictAll();
 		TiImageLruCache.getInstance().evictAll();
 		super.onLowMemory();
 	}
@@ -402,6 +412,7 @@ public abstract class TiApplication extends Application implements KrollApplicat
 	{
 		if (Build.VERSION.SDK_INT >= TiC.API_LEVEL_HONEYCOMB && level >= TRIM_MEMORY_RUNNING_LOW) {
 			// Release all the cached images
+			TiBlobLruCache.getInstance().evictAll();
 			TiImageLruCache.getInstance().evictAll();
 		}
 		super.onTrimMemory(level);
@@ -414,12 +425,35 @@ public abstract class TiApplication extends Application implements KrollApplicat
 		TiPlatformHelper.getInstance().initialize();
 		// Fastdev has been deprecated
 		// TiFastDev.initFastDev(this);
+
+		if (isAnalyticsEnabled()) {
+
+			TiPlatformHelper.getInstance().initAnalytics();
+			TiPlatformHelper.getInstance().setSdkVersion("ti." + getTiBuildVersion());
+			TiPlatformHelper.getInstance().setAppName(getAppInfo().getName());
+			TiPlatformHelper.getInstance().setAppId(getAppInfo().getId());
+			TiPlatformHelper.getInstance().setAppVersion(getAppInfo().getVersion());
+
+			String deployType = appProperties.getString("ti.deploytype", "unknown");
+			String buildType = appInfo.getBuildType();
+			if ("unknown".equals(deployType)) {
+				deployType = getDeployType();
+			}
+			if (buildType != null && !buildType.equals("")) {
+				TiPlatformHelper.getInstance().setBuildType(buildType);
+			}
+			// Just use type 'other' enum since it's open ended.
+			DeployType.OTHER.setName(deployType);
+			TiPlatformHelper.getInstance().setDeployType(DeployType.OTHER);
+			APSAnalytics.getInstance().sendAppEnrollEvent();
+
+		} else {
+			Log.i(TAG, "Analytics have been disabled");
+		}
 	}
 
 	public void postOnCreate()
 	{
-		loadAppProperties();
-
 		KrollRuntime runtime = KrollRuntime.getInstance();
 		if (runtime != null) {
 			Log.i(TAG, "Titanium Javascript runtime: " + runtime.getRuntimeName());
@@ -474,30 +508,6 @@ public abstract class TiApplication extends Application implements KrollApplicat
 			}
 		}
 
-		if (isAnalyticsEnabled()) {
-
-			TiPlatformHelper.getInstance().initAnalytics();
-			TiPlatformHelper.getInstance().setSdkVersion("ti." + getTiBuildVersion());
-			TiPlatformHelper.getInstance().setAppName(getAppInfo().getName());
-			TiPlatformHelper.getInstance().setAppId(getAppInfo().getId());
-			TiPlatformHelper.getInstance().setAppVersion(getAppInfo().getVersion());
-
-			String deployType = appProperties.getString("ti.deploytype", "unknown");
-			String buildType = appInfo.getBuildType();
-			if ("unknown".equals(deployType)) {
-				deployType = getDeployType();
-			}
-			if (buildType != null && !buildType.equals("")) {
-				TiPlatformHelper.getInstance().setBuildType(buildType);
-			}
-			// Just use type 'other' enum since it's open ended.
-			DeployType.OTHER.setName(deployType);
-			TiPlatformHelper.getInstance().setDeployType(DeployType.OTHER);
-			APSAnalytics.getInstance().sendAppEnrollEvent();
-
-		} else {
-			Log.i(TAG, "Analytics have been disabled");
-		}
 		tempFileHelper.scheduleCleanTempDir();
 	}
 
@@ -591,16 +601,6 @@ public abstract class TiApplication extends Application implements KrollApplicat
 		return appProperties;
 	}
 
-	/**
-	 * @deprecated
-	 */
-	public TiProperties getSystemProperties()
-	{
-		// This should actually be removed, but we are changing it to 'appProperties' instead so we don't break module
-		// developers who use this.
-		return appProperties;
-	}
-
 	public ITiAppInfo getAppInfo()
 	{
 		return appInfo;
@@ -647,6 +647,32 @@ public abstract class TiApplication extends Application implements KrollApplicat
 		return getAppInfo().isAnalyticsEnabled();
 	}
 
+	public boolean runOnMainThread()
+	{
+		return getAppProperties().getBool("run-on-main-thread", DEFAULT_RUN_ON_MAIN_THREAD);
+	}
+
+	public void setFilterAnalyticsEvents(String[] events)
+	{
+		filteredAnalyticsEvents = events;
+	}
+
+	public boolean isAnalyticsFiltered(String eventName)
+	{
+		if (filteredAnalyticsEvents == null) {
+			return false;
+		}
+
+		for (int i = 0; i < filteredAnalyticsEvents.length; ++i) {
+			String currentName = filteredAnalyticsEvents[i];
+			if (eventName.equals(currentName)) {
+				return true;
+			}
+
+		}
+		return false;
+	}
+
 	public String getDeployType()
 	{
 		return getAppInfo().getDeployType();
@@ -658,6 +684,11 @@ public abstract class TiApplication extends Application implements KrollApplicat
 	public String getTiBuildVersion()
 	{
 		return buildVersion;
+	}
+
+	public String getSDKVersion()
+	{
+		return getTiBuildVersion();
 	}
 
 	public String getTiBuildTimestamp()
@@ -875,4 +906,3 @@ public abstract class TiApplication extends Application implements KrollApplicat
 
 	public abstract void verifyCustomModules(TiRootActivity rootActivity);
 }
-

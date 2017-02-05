@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -19,11 +19,6 @@
 @interface CalendarModule : TiModule {
 @private
     EKEventStore * store;
-    
-    //BOOL need boolean to support refresh option from Calendar module
-    
-    BOOL iOS6API;
-  
 }
 
 -(EKEventStore*)store;
@@ -31,7 +26,7 @@
 @property (nonatomic, readonly)NSNumber* STATUS_NONE;
 @property (nonatomic, readonly)NSNumber* STATUS_CONFIRMED;
 @property (nonatomic, readonly)NSNumber* STATUS_TENTATIVE;
-@property (nonatomic, readonly)NSNumber* STATUS_CANCELED;
+@property (nonatomic, readonly)NSNumber* STATUS_CANCELLED;
 
 @property (nonatomic, readonly)NSNumber* AVAILABILITY_NOTSUPPORTED;
 @property (nonatomic, readonly)NSNumber* AVAILABILITY_BUSY;
@@ -51,6 +46,34 @@
 @property (nonatomic, readonly)NSNumber* AUTHORIZATION_RESTRICTED;
 @property (nonatomic, readonly)NSNumber* AUTHORIZATION_DENIED;
 @property (nonatomic, readonly)NSNumber* AUTHORIZATION_AUTHORIZED;
+
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_UNKNOWN;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_PENDING;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_ACCEPTED;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_DECLINED;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_TENTATIVE;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_DELEGATED;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_COMPLETED;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_STATUS_IN_PROCESS;
+
+@property (nonatomic, readonly)NSNumber* ATTENDEE_ROLE_UNKNOWN;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_ROLE_REQUIRED;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_ROLE_OPTIONAL;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_ROLE_CHAIR;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_ROLE_NON_PARTICIPANT;
+
+@property (nonatomic, readonly)NSNumber* ATTENDEE_TYPE_UNKNOWN;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_TYPE_PERSON;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_TYPE_ROOM;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_TYPE_RESOURCE;
+@property (nonatomic, readonly)NSNumber* ATTENDEE_TYPE_GROUP;
+
+@property (nonatomic, readonly)NSNumber* SOURCE_TYPE_LOCAL;
+@property (nonatomic, readonly)NSNumber* SOURCE_TYPE_EXCHANGE;
+@property (nonatomic, readonly)NSNumber* SOURCE_TYPE_CALDAV;
+@property (nonatomic, readonly)NSNumber* SOURCE_TYPE_MOBILEME;
+@property (nonatomic, readonly)NSNumber* SOURCE_TYPE_SUBSCRIBED;
+@property (nonatomic, readonly)NSNumber* SOURCE_TYPE_BIRTHDAYS;
 
 @end
 

@@ -91,6 +91,21 @@ public class TiUIScrollableView extends TiUIView
 
 				return false;
 			}
+
+			@Override
+			protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+				TiCompositeLayout.LayoutParams layoutParams = (TiCompositeLayout.LayoutParams) mContainer.getLayoutParams();
+				
+				if (layoutParams.sizeOrFillHeightEnabled && !layoutParams.autoFillsHeight) {
+					int index = getCurrentItem();
+					if (index < mViews.size()) {
+						TiUIView view = mViews.get(index).getOrCreateView();
+						int height = view.getLayoutParams().optionHeight.getAsPixels(this);
+						heightMeasureSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
+					}
+				}
+				super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+			}
 		});
 
 		pager.setAdapter(adapter);
@@ -132,7 +147,7 @@ public class TiUIScrollableView extends TiUIView
 
 					// If we don't use this state variable to check if it's a valid
 					// scroll, this event will fire when the view is first created
-					// because on creation, the scroll state is initialized to 
+					// because on creation, the scroll state is initialized to
 					// `idle` and this handler is called.
 					isValidScroll = false;
 				} else if (scrollState == ViewPager.SCROLL_STATE_SETTLING) {
@@ -272,7 +287,7 @@ public class TiUIScrollableView extends TiUIView
 	{
 		if (d.containsKey(TiC.PROPERTY_VIEWS)) {
 			setViews(d.get(TiC.PROPERTY_VIEWS));
-		} 
+		}
 
 		if (d.containsKey(TiC.PROPERTY_CURRENT_PAGE)) {
 			int page = TiConvert.toInt(d, TiC.PROPERTY_CURRENT_PAGE);
@@ -297,8 +312,12 @@ public class TiUIScrollableView extends TiUIView
 			}
 		}
 
+		if (d.containsKey("cacheSize")) {
+			int cacheSize = TiConvert.toInt(d.get("cacheSize"));
+			mPager.setOffscreenPageLimit(cacheSize);
+		}
+		
 		super.processProperties(d);
-
 	}
 
 	@Override
@@ -336,10 +355,48 @@ public class TiUIScrollableView extends TiUIView
 		}
 	}
 
+	public void insertViewsAt(int insertIndex, Object object)
+	{
+		if (object instanceof TiViewProxy) {
+			// insert a single view at insertIndex
+			TiViewProxy proxy = (TiViewProxy) object;
+			if (!mViews.contains(proxy)) {
+				proxy.setActivity(this.proxy.getActivity());
+				proxy.setParent(this.proxy);
+				mViews.add(insertIndex, proxy);
+				getProxy().setProperty(TiC.PROPERTY_VIEWS, mViews.toArray());
+				mAdapter.notifyDataSetChanged();
+			}
+		}
+		else if (object instanceof Object[]) {
+			// insert many views at insertIndex
+			boolean changed = false;
+			Object[] views = (Object[])object;
+			Activity activity = this.proxy.getActivity();
+			for (int i = 0; i < views.length; i++) {
+				if (views[i] instanceof TiViewProxy) {
+					TiViewProxy tv = (TiViewProxy)views[i];
+					tv.setActivity(activity);
+					tv.setParent(this.proxy);
+					mViews.add(insertIndex, tv);
+					changed = true;
+				}
+			}
+			if (changed) {
+				getProxy().setProperty(TiC.PROPERTY_VIEWS, mViews.toArray());
+				mAdapter.notifyDataSetChanged();
+			}
+		}
+	}
+
 	public void removeView(TiViewProxy proxy)
 	{
 		if (mViews.contains(proxy)) {
+			if (mCurIndex > 0 && mCurIndex == (mViews.size() - 1)) {
+				setCurrentPage(mCurIndex - 1);
+			}
 			mViews.remove(proxy);
+			proxy.releaseViews();
 			proxy.setParent(null);
 			getProxy().setProperty(TiC.PROPERTY_VIEWS, mViews.toArray());
 			mAdapter.notifyDataSetChanged();
@@ -438,10 +495,17 @@ public class TiUIScrollableView extends TiUIView
 	public void setViews(Object viewsObject)
 	{
 		boolean changed = false;
+		int oldSize = mViews.size();
+
 		clearViewsList();
 
 		if (viewsObject instanceof Object[]) {
 			Object[] views = (Object[])viewsObject;
+
+			if (oldSize > 0 && views.length == 0) {
+				changed = true;
+			}
+
 			Activity activity = this.proxy.getActivity();
 			for (int i = 0; i < views.length; i++) {
 				if (views[i] instanceof TiViewProxy) {

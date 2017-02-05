@@ -62,39 +62,6 @@
 	return button;
 }
 
--(CGFloat) verifyWidth:(CGFloat)suggestedWidth
-{
-	switch((int)styleCache)
-	{
-		case UITitaniumNativeItemInfoLight:
-		case UITitaniumNativeItemInfoDark:
-			return 18;
-		case UITitaniumNativeItemDisclosure:
-			return 29;
-		default: {
-			break;
-		}
-	}
-	return suggestedWidth;
-}
-
--(CGFloat) verifyHeight:(CGFloat)suggestedHeight
-{
-	switch((int)styleCache)
-	{
-		case UITitaniumNativeItemInfoLight:
-		case UITitaniumNativeItemInfoDark:
-			return 19;
-		case UITitaniumNativeItemDisclosure:
-			return 31;
-		default: {
-			break;
-		}
-	}
-	return suggestedHeight;
-}
-
-
 -(UIViewAutoresizing) verifyAutoresizing:(UIViewAutoresizing)suggestedResizing
 {
 	switch ((int)styleCache)
@@ -115,10 +82,12 @@
     return YES;
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(UIView *) parentViewForChild:(TiViewProxy *)child
 {
 	return [(TiUIButton *)[self view] viewGroupWrapper];
 }
+#endif
 
 -(void)removeBarButtonView
 {
@@ -156,7 +125,7 @@
 	[super fireEvent:type withObject:obj withSource:source propagate:propagate reportSuccess:report errorCode:code message:message];
 }
 
--(void)fireEvent:(NSString*)type withObject:(id)obj propagate:(BOOL)propagate reportSuccess:(BOOL)report errorCode:(int)code message:(NSString*)message;
+-(void)fireEvent:(NSString*)type withObject:(id)obj propagate:(BOOL)propagate reportSuccess:(BOOL)report errorCode:(NSInteger)code message:(NSString*)message;
 {
 	if (![TiUtils boolValue:[self valueForKey:@"enabled"] def:YES])
 	{
@@ -166,6 +135,7 @@
 	[super fireEvent:type withObject:obj propagate:propagate reportSuccess:report errorCode:code message:message];
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(TiDimension)defaultAutoWidthBehavior:(id)unused
 {
     return TiDimensionAutoSize;
@@ -174,6 +144,7 @@
 {
     return TiDimensionAutoSize;
 }
+#endif
 
 USE_VIEW_FOR_CONTENT_HEIGHT
 USE_VIEW_FOR_CONTENT_WIDTH

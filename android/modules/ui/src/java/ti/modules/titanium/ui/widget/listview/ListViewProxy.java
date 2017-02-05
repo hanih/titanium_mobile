@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -25,7 +25,6 @@ import org.appcelerator.titanium.view.TiUIView;
 
 import ti.modules.titanium.ui.UIModule;
 import android.app.Activity;
-import android.os.Handler;
 import android.os.Message;
 
 @Kroll.proxy(creatableInModule = UIModule.class, propertyAccessors = {
@@ -38,7 +37,8 @@ import android.os.Message;
 	TiC.PROPERTY_SEARCH_VIEW,
 	TiC.PROPERTY_CASE_INSENSITIVE_SEARCH,
 	TiC.PROPERTY_HEADER_DIVIDERS_ENABLED,
-	TiC.PROPERTY_FOOTER_DIVIDERS_ENABLED
+	TiC.PROPERTY_FOOTER_DIVIDERS_ENABLED,
+	TiC.PROPERTY_SEPARATOR_HEIGHT
 })
 public class ListViewProxy extends TiViewProxy {
 
@@ -52,13 +52,18 @@ public class ListViewProxy extends TiViewProxy {
 	private static final int MSG_INSERT_SECTION_AT = MSG_FIRST_ID + 402;
 	private static final int MSG_DELETE_SECTION_AT = MSG_FIRST_ID + 403;
 	private static final int MSG_REPLACE_SECTION_AT = MSG_FIRST_ID + 404;
-	private static final int MSG_SECTIONS = MSG_FIRST_ID + 405;
+	private static final int MSG_GET_SECTIONS = MSG_FIRST_ID + 405;
+	private static final int MSG_SET_SECTIONS = MSG_FIRST_ID + 406;
+	private static final int MSG_SET_MARKER = MSG_FIRST_ID + 407;
+	private static final int MSG_ADD_MARKER = MSG_FIRST_ID + 408;
+
+
 
 
 	//indicate if user attempts to add/modify/delete sections before TiListView is created 
 	private boolean preload = false;
 	private ArrayList<ListSectionProxy> preloadSections;
-	private HashMap<String, Integer> preloadMarker;
+	private ArrayList<HashMap<String, Integer>> preloadMarkers;
 	
 	public ListViewProxy() {
 		super();
@@ -70,8 +75,10 @@ public class ListViewProxy extends TiViewProxy {
 	
 	public void handleCreationArgs(KrollModule createdInModule, Object[] args) {
 		preloadSections = new ArrayList<ListSectionProxy>();
+		preloadMarkers = new ArrayList<HashMap<String, Integer>>();
 		defaultValues.put(TiC.PROPERTY_DEFAULT_ITEM_TEMPLATE, UIModule.LIST_ITEM_TEMPLATE_DEFAULT);
 		defaultValues.put(TiC.PROPERTY_CASE_INSENSITIVE_SEARCH, true);
+		defaultValues.put(TiC.PROPERTY_CAN_SCROLL, true);
 		super.handleCreationArgs(createdInModule, args);
 		
 	}
@@ -97,13 +104,18 @@ public class ListViewProxy extends TiViewProxy {
 		return preloadSections;
 	}
 	
-	public boolean isPreload() {
+	public boolean getPreload() {
 		return preload;
 	}
 	
-	public HashMap<String, Integer> getPreloadMarker()
+	public void setPreload(boolean pload)
 	{
-		return preloadMarker;
+		preload = pload;
+	}
+	
+	public ArrayList<HashMap<String, Integer>> getPreloadMarkers()
+	{
+		return preloadMarkers;
 	}
 
 	private void addPreloadSections(Object secs, int index, boolean arrayOnly) {
@@ -168,72 +180,140 @@ public class ListViewProxy extends TiViewProxy {
 	
 	@Kroll.method
 	public void setMarker(Object marker) {
-		if (marker instanceof HashMap) {
-			HashMap<String, Integer> m = (HashMap<String, Integer>) marker;
-			TiUIView listView = peekView();
-			if (listView != null) {
-				((TiListView)listView).setMarker(m);
-			} else {
-				preloadMarker = m;
-			}
-		}
+	    if (TiApplication.isUIThread()) {
+	        setMarkerHelper(marker);
+	    } else {
+	        TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_SET_MARKER), marker);
+	    }
+	}
+
+	public void setMarkerHelper(Object marker) {
+	    if (marker instanceof HashMap) {
+	        HashMap<String, Integer> m = (HashMap<String, Integer>) marker;
+	        TiUIView listView = peekView();
+	        if (listView != null) {
+	            ((TiListView)listView).setMarker(m);
+	        } else {
+	            preloadMarkers.clear();
+	            preloadMarkers.add(m);
+	        }
+	    }
 	}
 	
+	@Kroll.method
+	public void addMarker(Object marker) 
+	{
+	    if (TiApplication.isUIThread()) {
+	        addMarkerHelper(marker);
+	    } else {
+	        TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_ADD_MARKER), marker);
+	    }
+	}
+
+	private void addMarkerHelper(Object marker) 
+	{
+	    if (marker instanceof HashMap) {
+	        HashMap<String, Integer> m = (HashMap<String, Integer>) marker;
+	        TiUIView listView = peekView();
+	        if (listView != null) {
+	            ((TiListView)listView).addMarker(m);
+	        } else {
+	            preloadMarkers.add(m);
+	        }
+	    } 
+	}
 
 	@Override
 	public boolean handleMessage(final Message msg) 	{
 
-		switch (msg.what) {
+	    switch (msg.what) {
 
-			case MSG_SECTION_COUNT: {
-				AsyncResult result = (AsyncResult)msg.obj;
-				result.setResult(handleSectionCount());
-				return true;
-			}
+	        case MSG_SET_MARKER: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            Object marker = result.getArg();
+	            setMarkerHelper(marker);
+	            result.setResult(null);
+	            return true;
+	        }
 
-			case MSG_SCROLL_TO_ITEM: {
-				AsyncResult result = (AsyncResult)msg.obj;
-				KrollDict data = (KrollDict) result.getArg();
-				int sectionIndex = data.getInt("sectionIndex");
-				int itemIndex = data.getInt("itemIndex");
-				boolean animated = data.getBoolean(TiC.PROPERTY_ANIMATED);
-				handleScrollToItem(sectionIndex, itemIndex, animated);
-				result.setResult(null);
-				return true;
-			}
-			case MSG_APPEND_SECTION: {
-				handleAppendSection(msg.obj);
-				return true;
-			}
-			case MSG_DELETE_SECTION_AT: {
-				handleDeleteSectionAt(TiConvert.toInt(msg.obj));
-				return true;
-			}
-			case MSG_INSERT_SECTION_AT: {
-				KrollDict data = (KrollDict) msg.obj;
-				int index = data.getInt("index");
-				Object section = data.get("section");
-				handleInsertSectionAt(index, section);
-				return true;
-			}
-			case MSG_REPLACE_SECTION_AT: {
-				KrollDict data = (KrollDict) msg.obj;
-				int index = data.getInt("index");
-				Object section = data.get("section");
-				handleReplaceSectionAt(index, section);
-				return true;
-			}
-			
-			case MSG_SECTIONS: {
-				AsyncResult result = (AsyncResult)msg.obj;
-				result.setResult(handleSections());
-				return true;
-			}
-			
-			default:
-				return super.handleMessage(msg);
-		}
+	        case MSG_ADD_MARKER: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            Object marker = result.getArg();
+	            addMarkerHelper(marker);
+	            result.setResult(null);
+	            return true;
+	        }
+
+	        case MSG_SECTION_COUNT: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            result.setResult(handleSectionCount());
+	            return true;
+	        }
+
+	        case MSG_SCROLL_TO_ITEM: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            KrollDict data = (KrollDict) result.getArg();
+	            int sectionIndex = data.getInt("sectionIndex");
+	            int itemIndex = data.getInt("itemIndex");
+	            boolean animated = data.getBoolean(TiC.PROPERTY_ANIMATED);
+	            handleScrollToItem(sectionIndex, itemIndex, animated);
+	            result.setResult(null);
+	            return true;
+	        }
+	        case MSG_APPEND_SECTION: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            handleAppendSection(result.getArg());
+	            result.setResult(null);
+	            return true;
+	        }
+	        case MSG_DELETE_SECTION_AT: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            handleDeleteSectionAt(TiConvert.toInt(result.getArg()));
+	            result.setResult(null);
+	            return true;
+	        }
+	        case MSG_INSERT_SECTION_AT: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            KrollDict data = (KrollDict) result.getArg();
+	            int index = data.getInt("index");
+	            Object section = data.get("section");
+	            handleInsertSectionAt(index, section);
+	            result.setResult(null);
+	            return true;
+	        }
+	        case MSG_REPLACE_SECTION_AT: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            KrollDict data = (KrollDict) result.getArg();
+	            int index = data.getInt("index");
+	            Object section = data.get("section");
+	            handleReplaceSectionAt(index, section);
+	            result.setResult(null);
+	            return true;
+	        }
+
+	        case MSG_GET_SECTIONS: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            result.setResult(handleSections());
+	            return true;
+	        }
+
+	        case MSG_SET_SECTIONS: {
+	            AsyncResult result = (AsyncResult)msg.obj;
+	            TiUIView listView = peekView();
+	            if (listView != null) {
+	                ((TiListView)listView).processSectionsAndNotify((Object[])result.getArg());
+	            } else {
+	                Log.e(TAG, "Unable to set sections, listView is null", Log.DEBUG_MODE);
+	            }
+	            result.setResult(null);
+	            return true;
+	        }
+
+	        default:
+	            return super.handleMessage(msg);
+	    }
 	}
+
 	private void handleScrollToItem(int sectionIndex, int itemIndex, boolean animated) {
 		TiUIView listView = peekView();
 		if (listView != null) {
@@ -246,8 +326,7 @@ public class ListViewProxy extends TiViewProxy {
 		if (TiApplication.isUIThread()) {
 			handleAppendSection(section);
 		} else {
-			Handler handler = getMainHandler();
-			handler.sendMessage(handler.obtainMessage(MSG_APPEND_SECTION, section));
+			TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_APPEND_SECTION), section);
 		}
 	}
 
@@ -266,8 +345,7 @@ public class ListViewProxy extends TiViewProxy {
 		if (TiApplication.isUIThread()) {
 			handleDeleteSectionAt(index);
 		} else {
-			Handler handler = getMainHandler();
-			handler.sendMessage(handler.obtainMessage(MSG_DELETE_SECTION_AT, index));
+			TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_DELETE_SECTION_AT), index);
 		}
 	}
 	
@@ -295,11 +373,10 @@ public class ListViewProxy extends TiViewProxy {
 	}
 	
 	private void sendInsertSectionMessage(int index, Object section) {
-		Handler handler = getMainHandler();
 		KrollDict data = new KrollDict();
 		data.put("index", index);
 		data.put("section", section);
-		handler.sendMessage(handler.obtainMessage(MSG_INSERT_SECTION_AT, data));
+		TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_INSERT_SECTION_AT), data);
 	}
 	
 	private void handleInsertSectionAt(int index, Object section) {
@@ -326,11 +403,10 @@ public class ListViewProxy extends TiViewProxy {
 	}
 	
 	private void sendReplaceSectionMessage(int index, Object section) {
-		Handler handler = getMainHandler();
 		KrollDict data = new KrollDict();
 		data.put("index", index);
 		data.put("section", section);
-		handler.sendMessage(handler.obtainMessage(MSG_REPLACE_SECTION_AT, data));
+		TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_REPLACE_SECTION_AT), data);
 	}
 
 	private void handleReplaceSectionAt(int index, Object section) {
@@ -350,14 +426,47 @@ public class ListViewProxy extends TiViewProxy {
 		if (TiApplication.isUIThread()) {
 			return handleSections();
 		} else {
-			return (ListSectionProxy[]) TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_SECTIONS));
+			return (ListSectionProxy[]) TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_GET_SECTIONS));
 		}
 	}
 	
-	@Kroll.setProperty(retain=false) @Kroll.method
+	@Kroll.setProperty @Kroll.method
 	public void setSections(Object sections)
 	{
-		setPropertyAndFire(TiC.PROPERTY_SECTIONS, sections);
+		if (!(sections instanceof Object[])) {
+			Log.e(TAG, "Invalid argument type to setSection(), needs to be an array", Log.DEBUG_MODE);
+			return;
+		}
+		//Update java and javascript property
+		setProperty(TiC.PROPERTY_SECTIONS, sections);
+
+		Object[] sectionsArray = (Object[]) sections;
+		TiUIView listView = peekView();
+		//Preload sections if listView is not opened.
+		if (listView == null) {
+			preload = true;
+			clearPreloadSections();
+			addPreloadSections(sectionsArray, -1, true);
+		} else {
+			if (TiApplication.isUIThread()) {
+				((TiListView)listView).processSectionsAndNotify(sectionsArray);
+			} else {
+				TiMessenger.sendBlockingMainMessage(getMainHandler().obtainMessage(MSG_SET_SECTIONS), sectionsArray);
+			}
+			
+		}
+	}
+	
+	@Kroll.method @Kroll.setProperty
+	public void setCanScroll(boolean canScroll)
+	{
+		setProperty(TiC.PROPERTY_CAN_SCROLL, canScroll);
+	}
+	
+	@Kroll.method @Kroll.getProperty
+	public boolean getCanScroll()
+	{
+		return (Boolean) getProperty(TiC.PROPERTY_CAN_SCROLL);
 	}
 	
 	private ListSectionProxy[] handleSections()

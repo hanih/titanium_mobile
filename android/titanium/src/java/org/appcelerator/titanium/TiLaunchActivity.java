@@ -8,11 +8,12 @@ package org.appcelerator.titanium;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollRuntime;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.kroll.util.KrollAssetHelper;
+import org.appcelerator.titanium.proxy.IntentProxy;
 import org.appcelerator.titanium.util.TiColorHelper;
-import org.appcelerator.titanium.util.TiPlatformHelper;
 import org.appcelerator.titanium.util.TiUrl;
 import org.appcelerator.titanium.view.TiCompositeLayout;
 
@@ -67,11 +68,20 @@ public abstract class TiLaunchActivity extends TiBaseActivity
 	protected boolean finishing2373 = false;
 
 	protected TiUrl url;
+	protected boolean alloyIntent = false;
 
 	/**
 	 * @return The Javascript URL that this Activity should run
 	 */
 	public abstract String getUrl();
+
+	/**
+	 * @return is this an alloy activity that has been launched from an intent
+	 */
+	public boolean isAlloyIntent()
+	{
+		return this.alloyIntent;
+	}
 
 	/**
 	 * Subclasses should override to perform custom behavior
@@ -85,23 +95,38 @@ public abstract class TiLaunchActivity extends TiBaseActivity
 	 * This happens before the script is loaded.
 	 */
 	protected void contextCreated() { }
+	
+	protected String resolveUrl(String url) {
+		String fullUrl = TiUrl.normalizeWindowUrl(url).resolve();
+
+		if (fullUrl.startsWith(TiC.URL_APP_PREFIX)) {
+			fullUrl = fullUrl.replaceAll("app:/", "Resources");
+		} else if (fullUrl.startsWith(TiC.URL_ANDROID_ASSET_RESOURCES)) {
+			fullUrl = fullUrl.replaceAll("file:///android_asset/", "");
+		}
+
+		return fullUrl;
+	}
+	protected String resolveUrl(TiUrl url) {
+		return resolveUrl(url.url);
+	}
 
 	protected void loadActivityScript()
 	{
 		try {
-			String fullUrl = url.resolve();
-
-			Log.d(TAG, "Eval JS Activity:" + fullUrl, Log.DEBUG_MODE);
-
-			if (fullUrl.startsWith(TiC.URL_APP_PREFIX)) {
-				fullUrl = fullUrl.replaceAll("app:/", "Resources");
-
-			} else if (fullUrl.startsWith(TiC.URL_ANDROID_ASSET_RESOURCES)) {
-				fullUrl = fullUrl.replaceAll("file:///android_asset/", "");
+			String fullUrl = resolveUrl(url);
+			
+			// TIMOB-20502: if Alloy app and root activity is not available then
+			// run root activity first to initialize Alloy global variables etc...
+			// NOTE: this will only occur when launching from an intent or shortcut
+			this.alloyIntent = isJSActivity() && KrollAssetHelper.assetExists("Resources/alloy.js");
+			if (this.alloyIntent && !getTiApp().isRootActivityAvailable()) {
+				String rootUrl = resolveUrl("app.js");
+				KrollRuntime.getInstance().runModule(KrollAssetHelper.readAsset(rootUrl), rootUrl, activityProxy);
+				KrollRuntime.getInstance().evalString(KrollAssetHelper.readAsset(fullUrl), fullUrl);
+			} else {
+				KrollRuntime.getInstance().runModule(KrollAssetHelper.readAsset(fullUrl), fullUrl, activityProxy);
 			}
-
-			KrollRuntime.getInstance().runModule(KrollAssetHelper.readAsset(fullUrl), fullUrl, activityProxy);
-
 		} finally {
 			Log.d(TAG, "Signal JS loaded", Log.DEBUG_MODE);
 		}
@@ -145,9 +170,16 @@ public abstract class TiLaunchActivity extends TiBaseActivity
 	}
 
 	@Override
-	protected void windowCreated()
+ 	protected void onNewIntent(Intent intent)
+ 	{
+ 		super.onNewIntent(intent);
+ 		setIntent(intent);
+ 	}
+
+	@Override
+	protected void windowCreated(Bundle savedInstanceState)
 	{
-		super.windowCreated();
+		super.windowCreated(savedInstanceState);
 		loadActivityScript();
 		scriptLoaded();
 	}
@@ -385,6 +417,17 @@ public abstract class TiLaunchActivity extends TiBaseActivity
 			alertMissingLauncher(); // This also kicks off the finish() and restart.
 			activityOnResume();
 			return;
+		}
+
+		// handle 'onIntent' event for both TiRootActivity and TiJSActivity
+		Intent intent = getIntent();
+		if (intent != null) {
+			KrollDict data = new KrollDict();
+			data.put(TiC.EVENT_PROPERTY_INTENT, new IntentProxy(intent));
+			
+			if (!getTiApp().isRootActivityAvailable()) {
+				activityProxy.fireEvent(TiC.PROPERTY_ON_INTENT, data);
+			}
 		}
 
 		super.onResume();
