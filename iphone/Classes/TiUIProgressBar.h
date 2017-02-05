@@ -16,11 +16,15 @@
 	CGFloat max;
 	CGFloat min;
 	
-	BOOL requiresLayout;
 	UILabel * messageLabel;
+    
+#ifdef TI_USE_AUTOLAYOUT
+    UIView* backgroundView;
+    BOOL _constraintsAdded;
+#endif
 }
 
--(id)initWithStyle:(UIProgressViewStyle)style;
+-(id)initWithStyle:(UIProgressViewStyle)_style andMinimumValue:(CGFloat)_min maximumValue:(CGFloat)_max;
 
 @end
 

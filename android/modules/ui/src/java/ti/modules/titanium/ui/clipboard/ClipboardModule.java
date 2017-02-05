@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -10,25 +10,20 @@ import org.appcelerator.kroll.KrollModule;
 import org.appcelerator.kroll.annotations.Kroll;
 import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiApplication;
-import org.appcelerator.titanium.TiContext;
 
 import ti.modules.titanium.ui.UIModule;
 import android.content.Context;
 import android.text.ClipboardManager;
 
+@SuppressWarnings("deprecation")
 @Kroll.module(parentModule=UIModule.class)
 public class ClipboardModule extends KrollModule
 {
 	private String TAG = "Clipboard";
-	
+
 	public ClipboardModule()
 	{
 		super();
-	}
-
-	public ClipboardModule(TiContext tiContext)
-	{
-		this();
 	}
 
 	/**

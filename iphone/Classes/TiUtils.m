@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -20,6 +20,7 @@
 #import "TiBlob.h"
 #import "Base64Transcoder.h"
 #import "TiExceptionHandler.h"
+#import "TiApp.h"
 
 // for checking version
 #import <sys/utsname.h>
@@ -104,8 +105,10 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
         }
         return 130;
     }
-    else {    
-        if ([TiUtils isRetinaDisplay]) {
+    else {
+        if ([TiUtils isRetinaHDDisplay]) {
+            return 480;
+        } else if ([TiUtils isRetinaDisplay]) {
             return 320;
         }
         return 160;
@@ -114,7 +117,28 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
 
 +(BOOL)isRetinaFourInch
 {
-    return ([[UIScreen mainScreen] bounds].size.height == 568);
+    CGSize mainScreenBoundsSize = [[UIScreen mainScreen] bounds].size;
+    if ([TiUtils isIOS8OrGreater]) {
+        return (mainScreenBoundsSize.height == 568 || mainScreenBoundsSize.width == 568);
+    }
+    return (mainScreenBoundsSize.height == 568);
+}
+
++(BOOL)isRetinaiPhone6
+{
+    if ([TiUtils isIOS8OrGreater]) {
+        CGSize mainScreenBoundsSize = [[UIScreen mainScreen] bounds].size;
+        return (mainScreenBoundsSize.height == 667 || mainScreenBoundsSize.width == 667);
+    }
+    return NO;
+}
+
++(BOOL)isRetinaHDDisplay
+{
+    if ([TiUtils isIOS8OrGreater]) {
+        return ([UIScreen mainScreen].scale == 3.0);
+    }
+    return NO;
 }
 
 +(BOOL)isRetinaDisplay
@@ -137,12 +161,7 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
 				return NO;
 			}
 		}
-
-		if ([[UIScreen mainScreen] respondsToSelector:@selector(scale)])
-		{
-			scale = [[UIScreen mainScreen] scale];
-		}
-
+		scale = [[UIScreen mainScreen] scale];
 	}
 	return scale > 1.0;
 }
@@ -170,6 +189,30 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
 +(BOOL)isIOS8OrGreater
 {
     return [UIView instancesRespondToSelector:@selector(layoutMarginsDidChange)];
+}
+
++(BOOL)isIOS9OrGreater
+{
+    return [UIImage instancesRespondToSelector:@selector(flipsForRightToLeftLayoutDirection)];
+}
+
++(BOOL)isIOS9_1OrGreater
+{
+    return [UITouch instancesRespondToSelector:@selector(altitudeAngle)];
+}
+
++(BOOL)isIOS9_3OrGreater
+{
+    return [[[UIDevice currentDevice] systemVersion] compare:@"9.3" options:NSNumericSearch] != NSOrderedAscending;
+}
+
++(BOOL)isIOS10OrGreater
+{
+#if IS_XCODE_8
+    return [[[UIDevice currentDevice] systemVersion] compare:@"10.0" options:NSNumericSearch] != NSOrderedAscending;
+#else
+    return NO;
+#endif
 }
 
 +(BOOL)isIPad
@@ -563,6 +606,16 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
 	return nil;
 }
 
++ (NSString *)hexColorValue:(UIColor *)color
+{
+    const CGFloat *components = CGColorGetComponents(color.CGColor);
+    
+    return [NSString stringWithFormat:@"#%02lX%02lX%02lX",
+            lroundf(components[0] * 255),
+            lroundf(components[1] * 255),
+            lroundf(components[2] * 255)];
+}
+
 +(TiDimension)dimensionValue:(id)value
 {
 	return TiDimensionFromObject(value);
@@ -646,6 +699,96 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
 	//Note: If url is a nonimmediate image, this returns nil.
 }
 
++(UIImage *)adjustRotation:(UIImage *) image
+{
+    CGImageRef imgRef = image.CGImage;
+    CGFloat width = CGImageGetWidth(imgRef);
+    CGFloat height = CGImageGetHeight(imgRef);
+    CGAffineTransform transform = CGAffineTransformIdentity;
+    CGRect bounds = CGRectMake(0, 0, width, height);
+    CGFloat scaleRatio = bounds.size.width / width;
+    CGSize imageSize = CGSizeMake(CGImageGetWidth(imgRef), CGImageGetHeight(imgRef));
+    CGFloat boundHeight;
+    UIImageOrientation orient = image.imageOrientation;
+    switch(orient) {
+            
+        case UIImageOrientationUp: //EXIF = 1
+            transform = CGAffineTransformIdentity;
+            break;
+            
+        case UIImageOrientationUpMirrored: //EXIF = 2
+            transform = CGAffineTransformMakeTranslation(imageSize.width, 0.0);
+            transform = CGAffineTransformScale(transform, -1.0, 1.0);
+            break;
+            
+        case UIImageOrientationDown: //EXIF = 3
+            transform = CGAffineTransformMakeTranslation(imageSize.width, imageSize.height);
+            transform = CGAffineTransformRotate(transform, M_PI);
+            break;
+            
+        case UIImageOrientationDownMirrored: //EXIF = 4
+            transform = CGAffineTransformMakeTranslation(0.0, imageSize.height);
+            transform = CGAffineTransformScale(transform, 1.0, -1.0);
+            break;
+            
+        case UIImageOrientationLeftMirrored: //EXIF = 5
+            boundHeight = bounds.size.height;
+            bounds.size.height = bounds.size.width;
+            bounds.size.width = boundHeight;
+            transform = CGAffineTransformMakeTranslation(imageSize.height, imageSize.width);
+            transform = CGAffineTransformScale(transform, -1.0, 1.0);
+            transform = CGAffineTransformRotate(transform, 3.0 * M_PI / 2.0);
+            break;
+            
+        case UIImageOrientationLeft: //EXIF = 6
+            boundHeight = bounds.size.height;
+            bounds.size.height = bounds.size.width;
+            bounds.size.width = boundHeight;
+            transform = CGAffineTransformMakeTranslation(0.0, imageSize.width);
+            transform = CGAffineTransformRotate(transform, 3.0 * M_PI / 2.0);
+            break;
+            
+        case UIImageOrientationRightMirrored: //EXIF = 7
+            boundHeight = bounds.size.height;
+            bounds.size.height = bounds.size.width;
+            bounds.size.width = boundHeight;
+            transform = CGAffineTransformMakeScale(-1.0, 1.0);
+            transform = CGAffineTransformRotate(transform, M_PI / 2.0);
+            break;
+            
+        case UIImageOrientationRight: //EXIF = 8
+            boundHeight = bounds.size.height;
+            bounds.size.height = bounds.size.width;
+            bounds.size.width = boundHeight;
+            transform = CGAffineTransformMakeTranslation(imageSize.height, 0.0);
+            transform = CGAffineTransformRotate(transform, M_PI / 2.0);
+            break;
+            
+        default:
+            [NSException raise:NSInternalInconsistencyException format:@"Invalid image orientation"];
+    }
+    
+    UIGraphicsBeginImageContext(bounds.size);
+    
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    
+    if (orient == UIImageOrientationRight || orient == UIImageOrientationLeft) {
+        CGContextScaleCTM(context, -scaleRatio, scaleRatio);
+        CGContextTranslateCTM(context, -height, 0);
+    } else {
+        CGContextScaleCTM(context, scaleRatio, -scaleRatio);
+        CGContextTranslateCTM(context, 0, -height);
+    }
+    
+    CGContextConcatCTM(context, transform);
+    
+    CGContextDrawImage(UIGraphicsGetCurrentContext(), CGRectMake(0, 0, width, height), imgRef);
+    UIImage *imageCopy = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    return imageCopy;
+}
+
 +(NSURL*)checkFor2XImage:(NSURL*)url
 {
 	NSString * path = nil;
@@ -674,8 +817,26 @@ bool Base64AllocAndEncodeData(const void *inInputData, size_t inInputDataSize, c
 
 	NSString *os = [TiUtils isIPad] ? @"~ipad" : @"~iphone";
 
+	if ([TiUtils isRetinaHDDisplay]) {
+		// first try -736h@3x iphone6 Plus specific
+		NSString *testpath = [NSString stringWithFormat:@"%@-736h@3x.%@",partial,ext];
+		if ([fm fileExistsAtPath:testpath]) {
+			return [NSURL fileURLWithPath:testpath];
+		}
+		// second try plain @3x
+		testpath = [NSString stringWithFormat:@"%@@3x.%@",partial,ext];
+		if ([fm fileExistsAtPath:testpath]) {
+			return [NSURL fileURLWithPath:testpath];
+		}
+	}
 	if([TiUtils isRetinaDisplay]){
-		if ([TiUtils isRetinaFourInch]) {
+		if ([TiUtils isRetinaiPhone6]) {
+			// first try -667h@2x iphone6 specific
+			NSString *testpath = [NSString stringWithFormat:@"%@-667h@2x.%@",partial,ext];
+			if ([fm fileExistsAtPath:testpath]) {
+				return [NSURL fileURLWithPath:testpath];
+			}
+		} else if ([TiUtils isRetinaFourInch]) {
 			// first try -568h@2x iphone5 specific
 			NSString *testpath = [NSString stringWithFormat:@"%@-568h@2x.%@",partial,ext];
 			if ([fm fileExistsAtPath:testpath]) {
@@ -737,29 +898,45 @@ If the new path starts with / and the base url is app://..., we have to massage 
 		return [NSURL URLWithString:relativeString];
 	}
 
-	NSURL *result = nil;
-		
-	// don't bother if we don't at least have a path and it's not remote
-	//TODO: What is this mess? -BTH
-	if ([relativeString hasPrefix:@"http://"] || [relativeString hasPrefix:@"https://"])
-	{
-		NSRange range = [relativeString rangeOfString:@"/" options:0 range:NSMakeRange(7, [relativeString length]-7)];
-		if (range.location!=NSNotFound)
-		{
-			NSString *firstPortion = [relativeString substringToIndex:range.location];
-			NSString *pathPortion = [relativeString substringFromIndex:range.location];
-			CFStringRef escapedPath = CFURLCreateStringByAddingPercentEscapes(kCFAllocatorDefault,
-					(CFStringRef)pathPortion, charactersToNotEscape,charactersThatNeedEscaping,
-					kCFStringEncodingUTF8);
-			relativeString = [firstPortion stringByAppendingString:(NSString *)escapedPath];
-			if(escapedPath != NULL)
-			{
-				CFRelease(escapedPath);
-			}
-		}
-	}
-
-	result = [NSURL URLWithString:relativeString relativeToURL:rootPath];
+    NSURL *result = nil;
+    
+    // don't bother if we don't at least have a path and it's not remote
+    //TODO: What is this mess? -BTH
+    if ([relativeString hasPrefix:@"http://"] || [relativeString hasPrefix:@"https://"])
+    {
+        NSRange range = [relativeString rangeOfString:@"/" options:0 range:NSMakeRange(7, [relativeString length]-7)];
+        if (range.location!=NSNotFound)
+        {
+            NSString *firstPortion = [relativeString substringToIndex:range.location];
+            NSString *pathPortion = [relativeString substringFromIndex:range.location];
+            CFStringRef escapedPath = CFURLCreateStringByAddingPercentEscapes(kCFAllocatorDefault,
+                                                                              (CFStringRef)pathPortion, charactersToNotEscape,charactersThatNeedEscaping,
+                                                                              kCFStringEncodingUTF8);
+            relativeString = [firstPortion stringByAppendingString:(NSString *)escapedPath];
+            if(escapedPath != NULL)
+            {
+                CFRelease(escapedPath);
+            }
+        }
+        result = [NSURL URLWithString:relativeString relativeToURL:rootPath];
+    } else {
+        //only add percentescape if there are spaces in relativestring
+        if ([[relativeString componentsSeparatedByString:@" "] count] -1 == 0) {
+            result = [NSURL URLWithString:relativeString relativeToURL:rootPath];
+        }
+        else {
+            result = [NSURL URLWithString:[relativeString stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding] relativeToURL:rootPath];
+        }
+    }
+    //TIMOB-18262
+    if (result && ([[result scheme] isEqualToString:@"file"])){
+        BOOL isDir = NO;
+        BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:[result path] isDirectory:&isDir];
+        
+        if (exists && !isDir) {
+            return [TiUtils checkFor2XImage:result];
+        }
+    }
 
 	//TODO: Make this less ugly.
 	if ([relativeString hasPrefix:@"/"])
@@ -1082,6 +1259,32 @@ If the new path starts with / and the base url is app://..., we have to massage 
 			nil];
 }
 
++(NSDictionary*)touchPropertiesToDictionary:(UITouch*)touch andView:(UIView*)view
+{
+    if ([self forceTouchSupported] || [self validatePencilWithTouch:touch]) {
+         NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+         [NSNumber numberWithDouble:[touch locationInView:view].x],@"x",
+         [NSNumber numberWithDouble:[touch locationInView:view].y],@"y",
+         [NSNumber numberWithFloat:touch.force],@"force",
+         [NSNumber numberWithFloat:touch.maximumPossibleForce],@"maximumPossibleForce",
+         [NSNumber numberWithDouble:touch.timestamp],@"timestamp",
+         nil];
+        
+        if ([self isIOS9_1OrGreater]) {
+            [dict setValue:[NSNumber numberWithFloat:touch.altitudeAngle] forKey:@"altitudeAngle"];
+        }
+        
+        if ([self validatePencilWithTouch:touch]) {
+            [dict setValue:[NSNumber numberWithFloat:[touch azimuthUnitVectorInView:view].dx] forKey:@"azimuthUnitVectorInViewX"];
+            [dict setValue:[NSNumber numberWithFloat:[touch azimuthUnitVectorInView:view].dy] forKey:@"azimuthUnitVectorInViewY"];
+        }
+
+        return dict;
+    }
+    
+    return [self pointToDictionary:[touch locationInView:view]];
+}
+
 +(CGRect)contentFrame:(BOOL)window
 {
 	double height = 0;
@@ -1147,23 +1350,27 @@ If the new path starts with / and the base url is app://..., we have to massage 
 	return [[[TiScriptError alloc] initWithMessage:[value description] sourceURL:nil lineNo:0] autorelease];
 }
 
-+(UITextAlignment)textAlignmentValue:(id)alignment
++(NSTextAlignment)textAlignmentValue:(id)alignment
 {
-	UITextAlignment align = UITextAlignmentLeft;
+	NSTextAlignment align = NSTextAlignmentNatural; // Default for iOS 6+
 
 	if ([alignment isKindOfClass:[NSString class]])
 	{
 		if ([alignment isEqualToString:@"left"])
 		{
-			align = UITextAlignmentLeft;
+			align = NSTextAlignmentLeft;
 		}
 		else if ([alignment isEqualToString:@"center"])
 		{
-			align = UITextAlignmentCenter;
+			align = NSTextAlignmentCenter;
 		}
 		else if ([alignment isEqualToString:@"right"])
 		{
-			align = UITextAlignmentRight;
+			align = NSTextAlignmentRight;
+		}
+		else if ([alignment isEqualToString:@"justify"])
+		{
+			align = NSTextAlignmentJustified;
 		}
 	}
 	else if ([alignment isKindOfClass:[NSNumber class]])
@@ -1323,7 +1530,9 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
 		}
 		if ([appurlstr hasPrefix:@"/"])
 		{
+#ifndef __clang_analyzer__
 			leadingSlashRemoved = YES;
+#endif
 			appurlstr = [appurlstr substringFromIndex:1];
 		}
 #if TARGET_IPHONE_SIMULATOR
@@ -1425,40 +1634,61 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
     return result;
 }
 
-+(void)configureController:(id)controller withObject:(id)object
++(void)setVolume:(float)volume onObject:(id)theObject
 {
-    if ([self isIOS7OrGreater]) {
-        id edgesValue = nil;
-        id includeOpaque = nil;
-        id autoAdjust = nil;
-        if ([object isKindOfClass:[TiProxy class]]) {
-            edgesValue = [(TiProxy*)object valueForUndefinedKey:@"extendEdges"];
-            includeOpaque = [(TiProxy*)object valueForUndefinedKey:@"includeOpaqueBars"];
-            autoAdjust = [(TiProxy*)object valueForUndefinedKey:@"autoAdjustScrollViewInsets"];
-        } else if ([object isKindOfClass:[NSDictionary class]]){
-            edgesValue = [(NSDictionary*)object objectForKey:@"extendEdges"];
-            includeOpaque = [(NSDictionary*)object objectForKey:@"includeOpaqueBars"];
-            autoAdjust = [(NSDictionary*)object objectForKey:@"autoAdjustScrollViewInsets"];
-        } 
-        id<TiUIViewControllerIOS7Support> theController = controller;
-        
-        [theController setEdgesForExtendedLayout:[self extendedEdgesFromProp:edgesValue]];
-        [theController setExtendedLayoutIncludesOpaqueBars:[self boolValue:includeOpaque def:NO]];
-        [theController setAutomaticallyAdjustsScrollViewInsets:[self boolValue:autoAdjust def:NO]];
+    //Must be called on the main thread
+    if ([NSThread isMainThread]) {
+        if ([theObject respondsToSelector:@selector(setVolume:)]) {
+            [(id<VolumeSupport>)theObject setVolume:volume];
+        } else {
+            DebugLog(@"[WARN] The Object %@ does not respond to method -(void)setVolume:(float)volume",[theObject description]);
+        }
     }
 }
 
++(float)volumeFromObject:(id)theObject default:(float)def
+{
+    //Must be called on the main thread
+    float returnValue = def;
+    if ([NSThread isMainThread]) {
+        if ([theObject respondsToSelector:@selector(volume)]) {
+            returnValue = [(id<VolumeSupport>)theObject volume];
+        } else {
+            DebugLog(@"[WARN] The Object %@ does not respond to method -(float)volume",[theObject description]);
+        }
+    }
+    return returnValue;
+}
 
-+(CGRect)frameForController:(id)theController
++(void)configureController:(UIViewController*)controller withObject:(id)object
+{
+    id edgesValue = nil;
+    id includeOpaque = nil;
+    id autoAdjust = nil;
+    if ([object isKindOfClass:[TiProxy class]]) {
+        edgesValue = [(TiProxy*)object valueForUndefinedKey:@"extendEdges"];
+        includeOpaque = [(TiProxy*)object valueForUndefinedKey:@"includeOpaqueBars"];
+        autoAdjust = [(TiProxy*)object valueForUndefinedKey:@"autoAdjustScrollViewInsets"];
+    } else if ([object isKindOfClass:[NSDictionary class]]){
+        edgesValue = [(NSDictionary*)object objectForKey:@"extendEdges"];
+        includeOpaque = [(NSDictionary*)object objectForKey:@"includeOpaqueBars"];
+        autoAdjust = [(NSDictionary*)object objectForKey:@"autoAdjustScrollViewInsets"];
+    } 
+    
+    [controller setEdgesForExtendedLayout:[self extendedEdgesFromProp:edgesValue]];
+    [controller setExtendedLayoutIncludesOpaqueBars:[self boolValue:includeOpaque def:NO]];
+    [controller setAutomaticallyAdjustsScrollViewInsets:[self boolValue:autoAdjust def:NO]];
+}
+
+
++(CGRect)frameForController:(UIViewController*)theController
 {
     CGRect mainScreen = [[UIScreen mainScreen] bounds];
     CGRect rect = [[UIScreen mainScreen] applicationFrame];
-    if ([TiUtils isIOS7OrGreater]) {
-        NSUInteger edges = [(id<TiUIViewControllerIOS7Support>)theController edgesForExtendedLayout];
-        //Check if I cover status bar
-        if ( ((edges & 1/*UIRectEdgeTop*/) != 0) ){
-            return mainScreen;
-        }
+    NSUInteger edges = [theController edgesForExtendedLayout];
+    //Check if I cover status bar
+    if ( ((edges & UIRectEdgeTop) != 0) ){
+        return mainScreen;
     }
     return rect;
 }
@@ -1469,26 +1699,16 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
     UIBarStyle barStyle = [self barStyleForColor:color];
     BOOL isTranslucent = [self barTranslucencyForColor:color];
 
-    BOOL isIOS7 = [self isIOS7OrGreater];
-
     UINavigationBar * navBar = [navController navigationBar];
     [navBar setBarStyle:barStyle];
     [navBar setTranslucent:isTranslucent];
-    if(isIOS7) {
-        [navBar performSelector:@selector(setBarTintColor:) withObject:barColor];
-    } else {
-        [navBar setTintColor:barColor];
-    }
+    [navBar setBarTintColor:barColor];
     
     //This should not be here but in setToolBar. But keeping in place. Clean in 3.2.0
     UIToolbar * toolBar = [navController toolbar];
     [toolBar setBarStyle:barStyle];
     [toolBar setTranslucent:isTranslucent];
-    if(isIOS7) {
-        [toolBar performSelector:@selector(setBarTintColor:) withObject:barColor];
-    } else {
-        [toolBar setTintColor:barColor];
-    }
+    [toolBar setBarTintColor:barColor];
 }
 
 +(NSString*)replaceString:(NSString *)string characters:(NSCharacterSet *)characterSet withString:(NSString *)replacementString
@@ -1512,15 +1732,15 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
 {
     if (encodingMap == nil) {
         encodingMap = [[NSDictionary alloc] initWithObjectsAndKeys:
-                       NUMLONGLONG(NSASCIIStringEncoding),kTiASCIIEncoding,
-                       NUMLONGLONG(NSISOLatin1StringEncoding),kTiISOLatin1Encoding,
-                       NUMLONGLONG(NSUTF8StringEncoding),kTiUTF8Encoding,
-                       NUMLONGLONG(NSUTF16StringEncoding),kTiUTF16Encoding,
-                       NUMLONGLONG(NSUTF16BigEndianStringEncoding),kTiUTF16BEEncoding,
-                       NUMLONGLONG(NSUTF16LittleEndianStringEncoding),kTiUTF16LEEncoding,
+                       NUMUINT(NSASCIIStringEncoding),kTiASCIIEncoding,
+                       NUMUINT(NSISOLatin1StringEncoding),kTiISOLatin1Encoding,
+                       NUMUINT(NSUTF8StringEncoding),kTiUTF8Encoding,
+                       NUMUINT(NSUTF16StringEncoding),kTiUTF16Encoding,
+                       NUMUINT(NSUTF16BigEndianStringEncoding),kTiUTF16BEEncoding,
+                       NUMUINT(NSUTF16LittleEndianStringEncoding),kTiUTF16LEEncoding,
                        nil];
     }
-    return [[encodingMap valueForKey:type] longLongValue];
+    return [[encodingMap valueForKey:type] unsignedIntegerValue];
 }
 
 +(TiDataType)constantToType:(NSString *)type
@@ -1538,7 +1758,7 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
     return [[typeMap valueForKey:type] intValue];
 }
 
-+(size_t)dataSize:(TiDataType)type
++(int)dataSize:(TiDataType)type
 {
     if (sizeMap == nil) {
         sizeMap = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -1553,7 +1773,7 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
     return [[sizeMap objectForKey:NUMINT(type)] intValue];
 }
 
-+(int)encodeString:(NSString *)string toBuffer:(TiBuffer *)dest charset:(NSString*)charset offset:(int)destPosition sourceOffset:(int)srcPosition length:(int)srcLength
++(int)encodeString:(NSString *)string toBuffer:(TiBuffer *)dest charset:(NSString*)charset offset:(NSUInteger)destPosition sourceOffset:(NSUInteger)srcPosition length:(NSUInteger)srcLength
 {
     // TODO: Define standardized behavior.. but for now:
     // 1. Throw exception if destPosition extends past [dest length]
@@ -1573,16 +1793,16 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
         return BAD_ENCODING;
     }
     
-    int length = MIN(srcLength, [string length] - srcPosition);
+    NSUInteger length = MIN(srcLength, [string length] - srcPosition);
     NSData* encodedString = [[string substringWithRange:NSMakeRange(srcPosition, length)] dataUsingEncoding:encoding];
-    int encodeLength = MIN([encodedString length], [[dest data] length] - destPosition);
+    NSUInteger encodeLength = MIN([encodedString length], [[dest data] length] - destPosition);
     
     void* bufferBytes = [[dest data] mutableBytes];
     const void* stringBytes = [encodedString bytes];
     
     memcpy(bufferBytes+destPosition, stringBytes, encodeLength);
     
-    return destPosition+encodeLength;
+    return (int)(destPosition+encodeLength);
 }
 
 +(int)encodeNumber:(NSNumber *)data toBuffer:(TiBuffer *)dest offset:(int)position type:(NSString *)type endianness:(CFByteOrder)byteOrder
@@ -1601,7 +1821,7 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
     
     void* bytes = [[dest data] mutableBytes];
     TiDataType dataType = [TiUtils constantToType:type];
-    size_t size = [TiUtils dataSize:dataType];
+    int size = [TiUtils dataSize:dataType];
     
     if (size > MIN([[dest data] length], [[dest data] length] - position)) {
         return TOO_SMALL;
@@ -1719,7 +1939,7 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
 +(NSString*)md5:(NSData*)data
 {
 	unsigned char result[CC_MD5_DIGEST_LENGTH];
-	CC_MD5([data bytes], [data length], result);
+	CC_MD5([data bytes], (CC_LONG)[data length], result);
 	return [self convertToHex:(unsigned char*)&result length:CC_MD5_DIGEST_LENGTH];    
 }
 
@@ -1763,30 +1983,66 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
     return responseHeader;
 }
 
++(UIImage*)loadCappedBackgroundImage:(id)image forProxy:(TiProxy*)proxy withLeftCap:(TiDimension)leftCap topCap:(TiDimension)topCap
+{
+    UIImage* resultImage = nil;
+    if ([image isKindOfClass:[UIImage class]]) {
+        resultImage = [UIImageResize resizedImageWithLeftCap:leftCap topCap:topCap image:image];
+    } else if ([image isKindOfClass:[NSString class]]) {
+        if ([image isEqualToString:@""]) {
+            return nil;
+        }
+        NSURL *bgURL = [TiUtils toURL:image proxy:proxy];
+        resultImage = [[ImageLoader sharedLoader] loadImmediateStretchableImage:bgURL withLeftCap:leftCap topCap:topCap];
+        if (resultImage == nil)
+        {
+            UIImage *downloadedImgage = [[ImageLoader sharedLoader] loadRemote:bgURL];
+            resultImage = [UIImageResize resizedImageWithLeftCap:leftCap topCap:topCap image:downloadedImgage];
+        }
+        if (resultImage == nil && [image isEqualToString:@"Default.png"]) {
+            // special case where we're asking for Default.png and it's in Bundle not path
+            resultImage = [UIImageResize resizedImageWithLeftCap:leftCap topCap:topCap image:[UIImage imageNamed:image]];
+        }
+        if((resultImage != nil) && ([resultImage imageOrientation] != UIImageOrientationUp)) {
+            resultImage = [UIImageResize resizedImage:[resultImage size]
+                                 interpolationQuality:kCGInterpolationNone
+                                                image:resultImage
+                                                hires:NO];
+        }
+    } else if ([image isKindOfClass:[TiBlob class]]) {
+        resultImage = [UIImageResize resizedImageWithLeftCap:leftCap topCap:topCap image:[(TiBlob*)image image]];
+    }
+    return resultImage;
+}
+
 +(UIImage*)loadBackgroundImage:(id)image forProxy:(TiProxy*)proxy
 {
     UIImage* resultImage = nil;
     if ([image isKindOfClass:[UIImage class]]) {
         resultImage = image;
-    }
-    else if ([image isKindOfClass:[NSString class]]) {
+    } else if ([image isKindOfClass:[NSString class]]) {
+        if ([image isEqualToString:@""]) {
+            return nil;
+        }
+        
         NSURL *bgURL = [TiUtils toURL:image proxy:proxy];
         resultImage = [[ImageLoader sharedLoader] loadImmediateImage:bgURL];
-        if (resultImage==nil && [image isEqualToString:@"Default.png"])
+        if (resultImage == nil)
         {
+            resultImage = [[ImageLoader sharedLoader] loadRemote:bgURL];
+        }
+        if (resultImage == nil && [image isEqualToString:@"Default.png"]) {
             // special case where we're asking for Default.png and it's in Bundle not path
             resultImage = [UIImage imageNamed:image];
         }
-        if((resultImage != nil) && ([resultImage imageOrientation] != UIImageOrientationUp))
-        {
+        if((resultImage != nil) && ([resultImage imageOrientation] != UIImageOrientationUp)) {
             resultImage = [UIImageResize resizedImage:[resultImage size] 
                                  interpolationQuality:kCGInterpolationNone 
                                                 image:resultImage 
                                                 hires:NO];
         }
-    }
-    else if ([image isKindOfClass:[TiBlob class]]) {
-        resultImage = [image image];
+    } else if ([image isKindOfClass:[TiBlob class]]) {
+        resultImage = [(TiBlob*)image image];
     }
     return resultImage;
 }
@@ -1809,11 +2065,11 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
 	return result;
 }
 
-+ (NSMutableDictionary *)dictionaryWithCode:(int)code message:(NSString *)message
++ (NSMutableDictionary *)dictionaryWithCode:(NSInteger)code message:(NSString *)message
 {
 	return [NSMutableDictionary dictionaryWithObjectsAndKeys:
 			NUMBOOL(code==0), @"success",
-			NUMINT(code), @"code",
+			NUMLONG(code), @"code",
 			message,@"error", nil];
 }
 
@@ -1853,6 +2109,61 @@ if ([str isEqualToString:@#orientation]) return (UIDeviceOrientation)orientation
         NSLog(@"Could not parse JSON. Error: %@", error);
     }
     return r;
+}
+
++(BOOL)forceTouchSupported
+{
+    if ([self isIOS9OrGreater] == NO) {
+        return NO;
+    }
+    return [[[[TiApp app] window] traitCollection] forceTouchCapability] == UIForceTouchCapabilityAvailable;
+}
+
++(BOOL)livePhotoSupported
+{
+    return [self isIOS9_1OrGreater] == YES;
+}
+
++(NSString*)currentArchitecture
+{
+#ifdef __arm64__
+    return @"arm64";
+#endif
+#ifdef __arm__
+    return @"armv7";
+#endif
+#ifdef __x86_64__
+    return @"x86_64";
+#endif
+#ifdef __i386__
+    return @"i386";
+#endif
+    return @"Unknown";
+}
+
++(BOOL)validatePencilWithTouch:(UITouch*)touch
+{
+    if ([self isIOS9_1OrGreater]) {
+        return [touch type] == UITouchTypeStylus;
+    } else {
+        return NO;
+    }
+}
+
+// Credits: http://stackoverflow.com/a/14525049/5537752
++ (UIImage*)imageWithColor:(UIColor*)color
+{
+    CGRect rect = CGRectMake(0.0f, 0.0f, 1.0f, 1.0f);
+    UIGraphicsBeginImageContext(rect.size);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    
+    CGContextSetFillColorWithColor(context, [color CGColor]);
+    CGContextFillRect(context, rect);
+    
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    return image;
 }
 
 @end

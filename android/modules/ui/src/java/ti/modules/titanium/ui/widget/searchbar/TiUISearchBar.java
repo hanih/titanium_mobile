@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2012 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -16,7 +16,6 @@ import org.appcelerator.titanium.util.TiUIHelper;
 
 import ti.modules.titanium.ui.widget.TiUIText;
 import android.graphics.drawable.Drawable;
-import android.text.InputType;
 import android.text.TextUtils.TruncateAt;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -24,27 +23,29 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup.LayoutParams;
 import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+@SuppressWarnings("deprecation")
 public class TiUISearchBar extends TiUIText
 {
 	protected ImageButton cancelBtn;
-	private TiEditText tv;
+	private EditText tv;
 	private TextView promptText;
-	
+
 	public interface OnSearchChangeListener {
 		public void filterBy(String text);
 	}
-	
+
 	protected OnSearchChangeListener searchChangeListener;
-	
+
 	public TiUISearchBar(final TiViewProxy proxy)
 	{
 		super(proxy, true);
 
-		tv = (TiEditText) getNativeView();
+		tv = (EditText) getNativeView();
 		tv.setImeOptions(EditorInfo.IME_ACTION_DONE);
 		promptText = new TextView(proxy.getActivity());
 		promptText.setEllipsize(TruncateAt.END);
@@ -65,12 +66,6 @@ public class TiUISearchBar extends TiUIText
 		{
 			public void onClick(View view)
 			{
-				/* TODO try {
-					proxy.set(getProxy().getTiContext().getScope(), "value", "");
-				} catch (NoSuchFieldException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}*/
 				tv.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
 				fireEvent("cancel", null);
 			}
@@ -88,7 +83,7 @@ public class TiUISearchBar extends TiUIText
 
 		layout.setGravity(Gravity.NO_GRAVITY);
 		layout.setPadding(0,0,0,0);
-		
+
 		RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT,
 			LayoutParams.WRAP_CONTENT);
 		params.addRule(RelativeLayout.CENTER_IN_PARENT);
@@ -111,7 +106,7 @@ public class TiUISearchBar extends TiUIText
 
 		setNativeView(layout);
 	}
-	
+
 	@Override
 	public void onTextChanged(CharSequence s, int start, int before, int count) {
 		if (this.searchChangeListener != null) {

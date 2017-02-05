@@ -1,14 +1,18 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2016 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
-#ifdef USE_TI_MEDIA
+#ifdef USE_TI_MEDIASOUND
 
 #import "TiProxy.h"
 #import "TiFile.h"
+#if IS_XCODE_8
+#import <AVFoundation/AVFAudio.h>
+#else
 #import <AVFoundation/AVAudioPlayer.h>
+#endif
 
 @interface TiMediaSoundProxy : TiProxy<AVAudioPlayerDelegate> 
 {

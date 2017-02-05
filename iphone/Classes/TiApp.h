@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -13,7 +13,7 @@
 	#import "XHRBridge.h"
 #endif
 #import "TiRootViewController.h"
-#import <TiCore/TiContextRef.h>
+#import "TiToJS.h"
 
 extern BOOL applicationInMemoryPanic;
 
@@ -54,6 +54,7 @@ TI_INLINE void waitForMemoryPanicCleared()   //WARNING: This must never be run o
 	id remoteNotificationDelegate;
 	NSDictionary* remoteNotification;
 	NSMutableDictionary* pendingCompletionHandlers;
+    NSMutableDictionary* pendingReplyHandlers;
     NSMutableDictionary* backgroundTransferCompletionHandlers;
     BOOL appBooted;
     
@@ -63,6 +64,7 @@ TI_INLINE void waitForMemoryPanicCleared()   //WARNING: This must never be run o
 	NSMutableArray *backgroundServices;
 	NSMutableArray *runningServices;
 	NSDictionary *localNotification;
+    UIApplicationShortcutItem *launchedShortcutItem;
 }
 
 @property (nonatomic) BOOL forceSplashAsSnapshot;
@@ -102,6 +104,7 @@ TI_INLINE void waitForMemoryPanicCleared()   //WARNING: This must never be run o
 
 @property (nonatomic, readonly) TiContextGroupRef contextGroup;
 
+@property (nonatomic,readonly) BOOL willTerminate;
 /**
  Returns singleton instance of TiApp application object.
  */
@@ -186,24 +189,35 @@ TI_INLINE void waitForMemoryPanicCleared()   //WARNING: This must never be run o
 -(void)hideModalController:(UIViewController*)controller animated:(BOOL)animated;
 
 /**
- Returns user agent string to use for network requests.
- 
- @return User agent string
- */
--(NSString*)userAgent;
-
-/**
  Returns unique identifier for the current application launch.
  
  @return Current session id.
  */
 -(NSString*)sessionId;
 
--(KrollBridge*)krollBridge;
-
+/**
+ Starts searching for background services.
+ */
 -(void)beginBackgrounding;
+
+/**
+ Ends background services operations.
+ */
 -(void)endBackgrounding;
 
+/**
+ Returns the user agent string to use for system network requests.
+ */
+-(NSString*)systemUserAgent;
+
+/**
+ Returns or set the user agent string to use for network requests.
+ */
+@property(nonatomic, retain) NSString* userAgent;
+
+/**
+ Determines if the application finished booting.
+ */
 @property(nonatomic,readonly) BOOL appBooted;
 
 -(void)registerBackgroundService:(TiProxy*)proxy;
@@ -211,6 +225,6 @@ TI_INLINE void waitForMemoryPanicCleared()   //WARNING: This must never be run o
 -(void)stopBackgroundService:(TiProxy*)proxy;
 -(void)completionHandler:(id)key withResult:(int)result;
 -(void)completionHandlerForBackgroundTransfer:(id)key;
-
+-(void)watchKitExtensionRequestHandler:(id)key withUserInfo:(NSDictionary*)userInfo;
 @end
 

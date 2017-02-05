@@ -70,7 +70,7 @@ public class ListSectionProxy extends ViewProxy{
 	public class ListItemData {
 		private KrollDict properties;
 		private TiListViewTemplate template;
-		private String searchableText;
+		private String searchableText = "";
 		public ListItemData (KrollDict properties, TiListViewTemplate template) {
 			this.properties = properties;
 			this.template = template;
@@ -79,8 +79,9 @@ public class ListSectionProxy extends ViewProxy{
 				Object props = properties.get(TiC.PROPERTY_PROPERTIES);
 				if (props instanceof HashMap) {
 					HashMap<String, Object> propsHash = (HashMap<String, Object>) props;
-					if (propsHash.containsKey(TiC.PROPERTY_SEARCHABLE_TEXT)) {
-						searchableText = TiConvert.toString(propsHash, TiC.PROPERTY_SEARCHABLE_TEXT);
+					Object searchText = propsHash.get(TiC.PROPERTY_SEARCHABLE_TEXT);
+					if (propsHash.containsKey(TiC.PROPERTY_SEARCHABLE_TEXT) && searchText != null) {
+						searchableText = TiConvert.toString(searchText);
 					}
 				}
 			}
@@ -473,6 +474,11 @@ public class ListSectionProxy extends ViewProxy{
 				listItemData.add(i+offset, itemD);
 			}
 		}
+		
+		//reapply filter if necessary
+		if (isFilterOn()) {
+			applyFilter(getListView().getSearchText());
+		}
 		//Notify adapter that data has changed.
 		adapter.notifyDataSetChanged();
 	}
@@ -592,6 +598,10 @@ public class ListSectionProxy extends ViewProxy{
 				listItemData.remove(index);
 			}
 			count--;
+		}
+		//reapply filter if necessary
+		if (isFilterOn()) {
+			applyFilter(getListView().getSearchText());
 		}
 		return delete;
 	}
@@ -865,6 +875,10 @@ public class ListSectionProxy extends ViewProxy{
 		return (listview.getSearchText() != null && filterIndices.isEmpty());
 	}
 	
+	public boolean hasHeader() {
+		return (headerTitle != null || headerView != null);
+	}
+
 	public boolean isHeaderView(int pos) {
 		return (headerView != null && pos == 0);
 	}
@@ -920,13 +934,14 @@ public class ListSectionProxy extends ViewProxy{
 	}
 	
 	public boolean isFilterOn() {
-		if (getListView().getSearchText() != null) {
+		TiListView lv = getListView();
+		if (lv != null && lv.getSearchText() != null) {
 			return true;
 		}
 		return false;
 	}
 
-	public void applyFilter(String searchText) {
+	public int applyFilter(String searchText) {
 		//Clear previous result
 		filterIndices.clear();
 		boolean caseInsensitive = getListView().getCaseInsensitive();
@@ -939,10 +954,11 @@ public class ListSectionProxy extends ViewProxy{
 				searchableText = searchableText.toLowerCase();
 			}
 			//String comparison
-			if (searchableText != null && searchableText.contains(searchText)) {
+			if (searchableText.contains(searchText)) {
 				filterIndices.add(i);
 			}
 		}
+		return filterIndices.size();
 	}
 	
 	public void release() {

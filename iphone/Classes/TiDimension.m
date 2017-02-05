@@ -5,6 +5,8 @@
  * Please see the LICENSE included with this distribution for details.
  */
 
+#ifndef TI_USE_AUTOLAYOUT
+
 #import "TiDimension.h"
 #import "TiUtils.h"
 #import "TiApp.h"
@@ -37,6 +39,9 @@ CGFloat convertInchToPixels(CGFloat value)
 
 CGFloat convertPixelsToDip(CGFloat value)
 {
+    if ([TiUtils isRetinaHDDisplay]) {
+        return value/3.0;
+    }
     if ([TiUtils isRetinaDisplay]) {
         return value/2.0;
     }
@@ -45,6 +50,9 @@ CGFloat convertPixelsToDip(CGFloat value)
 
 CGFloat convertDipToInch(CGFloat value)
 {
+    if ([TiUtils isRetinaHDDisplay]) {
+        return (value*3.0)/[TiUtils dpi];
+    }
     if ([TiUtils isRetinaDisplay]) {
         return (value*2.0)/[TiUtils dpi];
     }
@@ -53,6 +61,9 @@ CGFloat convertDipToInch(CGFloat value)
 
 CGFloat convertDipToPixels(CGFloat value)
 {
+    if ([TiUtils isRetinaHDDisplay]) {
+        return (value * 3.0);
+    }
     if ([TiUtils isRetinaDisplay]) {
         return (value * 2.0);
     }
@@ -144,3 +155,4 @@ TiDimension TiDimensionFromObject(id object)
 }
 
 
+#endif

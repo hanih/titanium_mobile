@@ -62,7 +62,7 @@
 	{
 		NSData *theData = [NSData dataWithBytes:base64Result length:theResultLength];
 		free(base64Result);
-		return [[[TiBlob alloc] initWithData:theData mimetype:@"application/octet-stream"] autorelease];
+		return [[[TiBlob alloc] _initWithPageContext:[self pageContext] andData:theData mimetype:@"application/octet-stream"] autorelease];
 	}    
 	return nil;
 }
@@ -92,7 +92,7 @@
 	{
 		NSData *theData = [NSData dataWithBytes:base64Result length:theResultLength];
 		free(base64Result);
-		return [[[TiBlob alloc] initWithData:theData mimetype:@"application/octet-stream"] autorelease];
+		return [[[TiBlob alloc] _initWithPageContext:[self pageContext] andData:theData mimetype:@"application/octet-stream"] autorelease];
 	}
 	free(base64Result);
 	return nil;
@@ -119,7 +119,7 @@
 	NSString *nstr = [self convertToString:args];
 	const char *cStr = [nstr UTF8String];
 	unsigned char result[CC_SHA1_DIGEST_LENGTH];
-	CC_SHA1(cStr, [nstr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], result);
+	CC_SHA1(cStr, (CC_LONG)[nstr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], result);
 	return [TiUtils convertToHex:(unsigned char*)&result length:CC_SHA1_DIGEST_LENGTH];
 }
 
@@ -129,7 +129,7 @@
 	NSString *nstr = [self convertToString:args];
 	const char *cStr = [nstr UTF8String];
 	unsigned char result[CC_SHA256_DIGEST_LENGTH];
-	CC_SHA256(cStr, [nstr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], result);
+	CC_SHA256(cStr, (CC_LONG)[nstr lengthOfBytesUsingEncoding:NSUTF8StringEncoding], result);
 	return [TiUtils convertToHex:(unsigned char*)&result length:CC_SHA256_DIGEST_LENGTH];
 }
 

@@ -10,7 +10,11 @@
 @interface TiUISwitch : TiUIView<LayoutAutosizing> {
 @private
 	UISwitch *switchView;
+	BOOL firstInit;
+	BOOL animated;
 }
+
+- (NSNumber*)value;
 
 - (IBAction)switchChanged:(id)sender;
 

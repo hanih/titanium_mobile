@@ -89,6 +89,8 @@ exports.run = function (logger, config, cli) {
 	if (cli.argv.platforms) {
 		async.series(cli.argv.platforms.map(function (platform) {
 			return function (next) {
+				// scan platform SDK specific clean hooks
+				cli.scanHooks(path.join(__dirname, '..', '..', platform, 'cli', 'hooks'));
 				cli.fireHook('clean.pre', function () {
 					cli.fireHook('clean.' + platform + '.pre', function () {
 						var dir = path.join(buildDir, platform);
@@ -97,6 +99,13 @@ exports.run = function (logger, config, cli) {
 							wrench.rmdirSyncRecursive(dir);
 						} else {
 							logger.debug(__('Directory does not exist %s', dir.cyan));
+						}
+						dir = path.join(buildDir, 'build_' + platform + '.log');
+						if (appc.fs.exists(dir)) {
+							logger.debug(__('Deleting %s', dir.cyan));
+							fs.unlinkSync(dir);
+						} else {
+							logger.debug(__('Build log does not exist %s', dir.cyan));
 						}
 						cli.fireHook('clean.' + platform + '.post', function () {
 							cli.fireHook('clean.post', function () {
@@ -110,21 +119,28 @@ exports.run = function (logger, config, cli) {
 	} else if (appc.fs.exists(buildDir)) {
 		logger.debug(__('Deleting all platform build directories'));
 
+		// scan platform SDK specific clean hooks
+		if (ti.targetPlatforms) {
+			ti.targetPlatforms.forEach(function(platform) {
+				cli.scanHooks(path.join(__dirname, '..', '..', platform, 'cli', 'hooks'));
+			});
+		}
+
 		cli.fireHook('clean.pre', function () {
 			async.series(fs.readdirSync(buildDir).map(function (dir) {
 				return function (next) {
-					var fulldir = path.join(buildDir, dir);
-					if (fs.lstatSync(fulldir).isDirectory()) {
-						cli.fireHook('clean.' + dir + '.pre', function () {
-							logger.debug(__('Deleting %s', fulldir.cyan));
-							wrench.rmdirSyncRecursive(fulldir);
-							cli.fireHook('clean.' + dir + '.post', function () {
-								next();
-							});
+					var file = path.join(buildDir, dir);
+					cli.fireHook('clean.' + dir + '.pre', function () {
+						logger.debug(__('Deleting %s', file.cyan));
+						if (fs.lstatSync(file).isDirectory()) {
+							wrench.rmdirSyncRecursive(file);
+						} else {
+							fs.unlinkSync(file);
+						}
+						cli.fireHook('clean.' + dir + '.post', function () {
+							next();
 						});
-					} else {
-						next();
-					}
+					});
 				};
 			}), function () {
 				cli.fireHook('clean.post', function () {

@@ -17,6 +17,7 @@ NSString * const TI_APPLICATION_DESCRIPTION = @"__APP_DESCRIPTION__";
 NSString * const TI_APPLICATION_COPYRIGHT = @"__APP_COPYRIGHT__";
 NSString * const TI_APPLICATION_GUID = @"__APP_GUID__";
 BOOL const TI_APPLICATION_ANALYTICS = __APP_ANALYTICS__;
+BOOL const TI_APPLICATION_SHOW_ERROR_CONTROLLER = __SHOW_ERROR_CONTROLLER__;
 NSString * const TI_APPLICATION_BUILD_TYPE = @"__APP_DEPLOY_TYPE__";
 
 #ifdef TARGET_IPHONE_SIMULATOR
@@ -25,14 +26,6 @@ NSString * const TI_APPLICATION_RESOURCE_DIR = @"__APP_RESOURCE_DIR__";
 
 int main(int argc, char *argv[]) {
     NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-
-#ifdef __LOG__ID__
-	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-	NSString *documentsDirectory = [paths objectAtIndex:0];
-	NSString *logPath = [documentsDirectory stringByAppendingPathComponent:[NSString stringWithFormat:@"%s.log",STRING(__LOG__ID__)]];
-	freopen([logPath cStringUsingEncoding:NSUTF8StringEncoding],"w+",stderr);
-	fprintf(stderr,"[INFO] Application started\n");
-#endif
 
 	int retVal = UIApplicationMain(argc, argv, nil, @"TiApp");
     [pool release];

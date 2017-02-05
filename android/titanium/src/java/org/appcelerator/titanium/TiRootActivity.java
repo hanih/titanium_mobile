@@ -7,10 +7,10 @@
 package org.appcelerator.titanium;
 
 import org.appcelerator.kroll.common.Log;
-import org.appcelerator.kroll.common.TiFastDev;
 import org.appcelerator.titanium.util.TiActivitySupport;
 import org.appcelerator.titanium.util.TiRHelper;
 
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -72,6 +72,14 @@ public class TiRootActivity extends TiLaunchActivity
 	@Override
 	protected void onCreate(Bundle savedInstanceState)
 	{
+		TiApplication tiApp = getTiApp();
+		Intent intent = getIntent();
+		TiRootActivity rootActivity = tiApp.getRootActivity();
+
+		if (intent != null && rootActivity != null) {
+			rootActivity.setIntent(intent);
+		}
+
 		if (willFinishFalseRootActivity(savedInstanceState)) {
 			return;
 		}
@@ -80,8 +88,6 @@ public class TiRootActivity extends TiLaunchActivity
 			// Android bug 2373 detected and we're going to restart.
 			return;
 		}
-
-		TiApplication tiApp = getTiApp();
 
 		if (tiApp.isRestartPending() || TiBaseActivity.isUnsupportedReLaunch(this, savedInstanceState)) {
 			super.onCreate(savedInstanceState); // Will take care of scheduling restart and finishing.
@@ -100,12 +106,12 @@ public class TiRootActivity extends TiLaunchActivity
 	}
 
 	@Override
-	protected void windowCreated()
+	protected void windowCreated(Bundle savedInstanceState)
 	{
 		// Use settings from tiapp.xml
 		ITiAppInfo appInfo = getTiApp().getAppInfo();
 		getIntent().putExtra(TiC.PROPERTY_FULLSCREEN, appInfo.isFullscreen());
-		super.windowCreated();
+		super.windowCreated(savedInstanceState);
 	}
 
 	@Override
@@ -144,7 +150,6 @@ public class TiRootActivity extends TiLaunchActivity
 		}
 
 		Log.d(TAG, "root activity onDestroy, activity = " + this, Log.DEBUG_MODE);
-		TiFastDev.onDestroy();
 	}
 
 	@Override

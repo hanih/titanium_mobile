@@ -4,8 +4,7 @@
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
-#if defined(USE_TI_UIIOSCOVERFLOWVIEW) || defined(USE_TI_UICOVERFLOWVIEW)
-	
+#ifdef USE_TI_UIIOSCOVERFLOWVIEW
 
 #import "TiUIView.h"
 #import "AFOpenFlow/AFOpenFlowView.h"
@@ -18,7 +17,7 @@
 	NSMutableDictionary* toLoad;
 	NSMutableDictionary* loading;
 	NSRecursiveLock* loadLock;
-	int previous;
+	NSInteger previous;
 }
 
 -(void)setImage:(id)image forIndex:(NSInteger)index;

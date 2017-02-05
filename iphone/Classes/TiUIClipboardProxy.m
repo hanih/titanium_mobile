@@ -5,6 +5,7 @@
  * Please see the LICENSE included with this distribution for details.
  */
 
+#ifdef USE_TI_UICLIPBOARD
 #import "TiUIClipboardProxy.h"
 #import "TiUtils.h"
 #import "TiApp.h"
@@ -19,6 +20,7 @@ typedef enum {
 	CLIPBOARD_TEXT,
 	CLIPBOARD_URI_LIST,
 	CLIPBOARD_IMAGE,
+	CLIPBOARD_COLOR,
 	CLIPBOARD_UNKNOWN
 } ClipboardType;
 
@@ -40,6 +42,10 @@ static ClipboardType mimeTypeToDataType(NSString *mimeType)
 	{
 		return CLIPBOARD_IMAGE;
 	}
+	else if ([mimeType isEqualToString: @"color"])
+	{
+		return CLIPBOARD_COLOR;
+	}
 	else
 	{
 		// Something else, work from the MIME type.
@@ -49,7 +55,7 @@ static ClipboardType mimeTypeToDataType(NSString *mimeType)
 
 static NSString *mimeTypeToUTType(NSString *mimeType)
 {
-	NSString *uti = (NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, (CFStringRef)mimeType, NULL);
+	NSString *uti = [(NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, (CFStringRef)mimeType, NULL) autorelease];
 	if (uti == nil) {
 		// Should we do this? Lets us copy/paste custom data, anyway.
 		uti = mimeType;
@@ -67,11 +73,12 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 -(void)clearData:(id)arg
 {
 	ENSURE_UI_THREAD(clearData, arg);
-	ENSURE_STRING_OR_NIL(arg);
+	ENSURE_SINGLE_ARG_OR_NIL(arg, NSString);
 
-	NSString *mimeType = arg;
+	NSString *mimeType = arg ?: @"application/octet-stream";
 	UIPasteboard *board = [UIPasteboard generalPasteboard];
 	ClipboardType dataType = mimeTypeToDataType(mimeType);
+	
 	switch (dataType)
 	{
 		case CLIPBOARD_TEXT:
@@ -89,10 +96,15 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 			board.images = nil;
 			break;
 		}
+		case CLIPBOARD_COLOR:
+		{
+			board.colors = nil;
+			break;
+		}
 		case CLIPBOARD_UNKNOWN:
 		default:
 		{
-			[board setData: nil forPasteboardType: mimeTypeToUTType(mimeType)];
+			[[UIPasteboard generalPasteboard] setItems:@[]];
 		}
 	}
 }
@@ -143,11 +155,15 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 		{
 			return [board.URL absoluteString];
 		}
+		case CLIPBOARD_COLOR:
+		{
+			return [TiUtils hexColorValue:[board color]];
+		}
 		case CLIPBOARD_IMAGE:
 		{
 			UIImage *image = board.image;
 			if (image) {
-				return [[[TiBlob alloc] initWithImage: image] autorelease];
+				return [[[TiBlob alloc] _initWithPageContext:[self pageContext] andImage:image] autorelease];
 			} else {
 				return nil;
 			}
@@ -156,8 +172,9 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 		default:
 		{
 			NSData *data = [board dataForPasteboardType: mimeTypeToUTType(mimeType)];
+
 			if (data) {
-				return [[[TiBlob alloc] initWithData: data mimetype: mimeType] autorelease];
+				return [[[TiBlob alloc] _initWithPageContext:[self pageContext] andData:data mimetype:mimeType] autorelease];
 			} else {
 				return nil;
 			}
@@ -208,6 +225,11 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 				result=[board containsPasteboardTypes: UIPasteboardTypeListImage];
 				break;
 			}
+			case CLIPBOARD_COLOR:
+			{
+				result=[board containsPasteboardTypes: UIPasteboardTypeListColor];
+				break;
+			}
 			case CLIPBOARD_UNKNOWN:
 			default:
 			{
@@ -218,10 +240,121 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 	}, YES);
 	return NUMBOOL(result);
 }
+
+
 	 
--(id)hasText:(id)args
+-(id)hasText:(id)unused
 {
-	return [self hasData: @"text/plain"];
+#if IS_XCODE_8
+    if ([TiUtils isIOS10OrGreater]) {
+        return NUMBOOL([[UIPasteboard generalPasteboard] hasStrings]);
+    }
+#endif
+    
+    return [self hasData: @"text/plain"];
+}
+
+-(id)hasColors:(id)unused
+{
+#if IS_XCODE_8
+    if ([TiUtils isIOS10OrGreater]) {
+        return NUMBOOL([[UIPasteboard generalPasteboard] hasColors]);
+    }
+#endif
+
+    NSLog(@"[WARN] Ti.UI.Clipboard.hasColors() is only available on iOS 10 and later.");
+    return NUMBOOL(NO);
+}
+
+-(id)hasImages:(id)unused
+{
+#if IS_XCODE_8
+    if ([TiUtils isIOS10OrGreater]) {
+        return NUMBOOL([[UIPasteboard generalPasteboard] hasImages]);
+    }
+#endif
+    
+    NSLog(@"[WARN] Ti.UI.Clipboard.hasImages() is only available on iOS 10 and later.");
+    return NUMBOOL(NO);
+}
+
+-(id)hasURLs:(id)unused
+{
+#if IS_XCODE_8
+    if ([TiUtils isIOS10OrGreater]) {
+        return NUMBOOL([[UIPasteboard generalPasteboard] hasURLs]);
+    }
+#endif
+    
+    NSLog(@"[WARN] Ti.UI.Clipboard.hasURLs() is only available on iOS 10 and later.");
+    return NUMBOOL(NO);
+}
+
+-(void)setItems:(id)args
+{
+#if IS_XCODE_8
+    if ([TiUtils isIOS10OrGreater]) {
+        NSArray *items = [args objectForKey:@"items"];
+        NSDictionary *options = [args objectForKey:@"options"];
+        
+        __block NSMutableArray *result = [[[NSMutableArray alloc] init] retain];
+        
+        // The key of the items must be a string (mime-type)
+        for (id item in items) {
+            NSMutableDictionary *newDict = [[NSMutableDictionary alloc] init];
+            for (id key in item) {
+                ENSURE_TYPE(key, NSString);
+                [newDict setValue:[item valueForKey:key] forKey:mimeTypeToUTType(key)];
+            }
+            if (newDict != nil) {
+                [result addObject:newDict];
+            }
+            RELEASE_TO_NIL(newDict);
+        }
+        
+        TiThreadPerformOnMainThread(^{
+            if (options == nil) {
+                [[UIPasteboard generalPasteboard] setItems:result];
+            } else {
+                [[UIPasteboard generalPasteboard] setItems:result options:options];
+            }
+            RELEASE_TO_NIL(result);
+        }, YES);
+    }
+#endif
+}
+
+-(id)getItems:(id)unused
+{
+#if IS_XCODE_8
+    if ([TiUtils isIOS10OrGreater]) {
+        __block id items;
+        
+        TiThreadPerformOnMainThread(^{
+            items = [[[UIPasteboard generalPasteboard] items] retain];
+            
+            // Check for invalid UTI's / mime-types to prevent a runtime-crash
+            for (NSDictionary *item in items) {
+                for (NSString *key in [item allKeys]) {
+                    if ([key hasPrefix:@"dyn."]) {
+                        NSLog(@"[ERROR] Invalid mime-type specified to setItems() before. Returning an empty result ...");
+                        
+                        RELEASE_TO_NIL(items);
+                        items = @[];
+                        break;
+                    }
+                }
+                if ([items count] == 0) {
+                    break;
+                }
+            }
+        }, YES);
+        
+        return [items autorelease];
+    }
+#endif
+    
+    return @[];
 }
 
 -(void)setData:(id)args
@@ -255,6 +388,11 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 			board.image = [TiUtils toImage: data proxy: self];
 			break;
 		}
+		case CLIPBOARD_COLOR:
+		{
+			board.color = [[TiUtils colorValue:data] color];
+			break;
+		}
 		case CLIPBOARD_UNKNOWN:
 		default:
 		{
@@ -271,7 +409,7 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 			{
 				raw = [[TiUtils stringValue: data] dataUsingEncoding: NSUTF8StringEncoding];
 			}
-			
+
 			[board setData: raw forPasteboardType: mimeTypeToUTType(mimeType)];
 		}
 	}
@@ -285,3 +423,4 @@ static NSString *mimeTypeToUTType(NSString *mimeType)
 }
 	 
  @end
+#endif

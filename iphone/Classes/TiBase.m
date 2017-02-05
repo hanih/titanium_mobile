@@ -1,65 +1,31 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2015 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
+
 #import "TiBase.h"
 #import "TiApp.h"
-#import "TiDebugger.h"
+#ifndef DISABLE_TI_LOG_SERVER
+# import "TiLogServer.h"
+#endif
 
 #include <stdarg.h>
 #include <pthread.h>
 #include <sys/time.h>
 
 #if DEBUG
-
-#include <assert.h>
-#include <stdbool.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/sysctl.h>
-
+# include <assert.h>
+# include <stdbool.h>
+# include <sys/types.h>
+# include <unistd.h>
+# include <sys/sysctl.h>
 #endif
 
-static bool ApplicationBeingDebugged(void)
-// Returns true if the current process is being debugged (either
-// running under the debugger or has a debugger attached post facto).
-{
-#if TARGET_IPHONE_SIMULATOR
-    return 1;
-#elif DEBUG
-    int                 junk;
-    int                 mib[4];
-    struct kinfo_proc   info;
-    size_t              size;
-    
-    // Initialize the flags so that, if sysctl fails for some bizarre
-    // reason, we get a predictable result.
-    
-    info.kp_proc.p_flag = 0;
-    
-    // Initialize mib, which tells sysctl the info we want, in this case
-    // we're looking for information about a specific process ID.
-    
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_PROC;
-    mib[2] = KERN_PROC_PID;
-    mib[3] = getpid();
-    
-    // Call sysctl.
-    
-    size = sizeof(info);
-    junk = sysctl(mib, sizeof(mib) / sizeof(*mib), &info, &size, NULL, 0);
-    if(junk != 0){
-        return 0;
-    }
-    // We're being debugged if the P_TRACED flag is set.
-    return ( (info.kp_proc.p_flag & P_TRACED) != 0 );
-#else
-    return 0;
+#ifndef USE_JSCORE_FRAMEWORK
+# import "TiDebugger.h"
 #endif
-}
 
 NSMutableArray* TiCreateNonRetainingArray() 
 {
@@ -85,37 +51,34 @@ CGPoint midpointBetweenPoints(CGPoint a, CGPoint b)
     return CGPointMake(x, y);
 }
 
+/**
+ * Logs a message from the app's console.log(), Ti.API.info(), and native
+ * NSLog() calls to the log server.
+ */
 void TiLogMessage(NSString* str, ...) {
-    va_list args;
-    va_start(args, str);
-    
-    NSString* message = [[NSString alloc] initWithFormat:str arguments:args];
-    if ([[TiApp app] debugMode]) {
-        TiDebuggerLogMessage(OUT, message);
-    }
-    else {
-        
-        if (ApplicationBeingDebugged()) {
-            const char* s = [message UTF8String];
-            if (s[0]=='[')
-            {
-                fprintf(stderr,"%s\n", s);
-                fflush(stderr);
-            }
-            else
-            {
-                fprintf(stderr,"[DEBUG] %s\n", s);
-                fflush(stderr);
-            }
-        }
-        else{
+	va_list args;
+	va_start(args, str);
+
+	NSString* message = [[[NSString alloc] initWithFormat:str arguments:args] autorelease];
+
 #pragma push
 #undef NSLog
-            NSLog(@"%@",message);
+	// first output the message to the system log
+	// we want to see the message regardless of which target we're running on
+	NSLog(@"%@", message);
 #pragma pop
-        }
-    }
-    [message release];
+
+#ifndef DISABLE_TI_LOG_SERVER
+	// next we send the message to the log server to be sent or queued up
+	[TiLogServer log:message];
+#endif
+
+#ifndef USE_JSCORE_FRAMEWORK
+	// lastly, if we're debugging the app, write the message to the debugger
+	if ([[TiApp app] debugMode]) {
+		TiDebuggerLogMessage(OUT, message);
+	}
+#endif
 }
 
 NSString * const kTiASCIIEncoding = @"ascii";
@@ -139,6 +102,7 @@ NSString * const kTiSuspendNotification = @"TiSuspend";
 NSString * const kTiPausedNotification = @"TiPaused";
 NSString * const kTiResumeNotification = @"TiResume";
 NSString * const kTiResumedNotification = @"TiResumed";
+NSString * const kTiErrorNotification = @"TiError";
 NSString * const kTiAnalyticsNotification = @"TiAnalytics";
 NSString * const kTiRemoteDeviceUUIDNotification = @"TiDeviceUUID";
 NSString * const kTiGestureShakeNotification = @"TiGestureShake";
@@ -153,7 +117,15 @@ NSString * const kTiURLDowloadProgress = @"TiDownloadProgress";
 NSString * const kTiURLUploadProgress = @"TiUploadProgress";
 NSString * const kTiFrameAdjustNotification = @"TiFrameAdjust";
 NSString * const kTiLocalNotification = @"TiLocalNotification";
+NSString * const kTiLocalNotificationAction = @"TiLocalNotificationAction";
+NSString * const kTiRemoteNotificationAction = @"TiRemoteNotificationAction";
+NSString * const kTiUserNotificationSettingsNotification = @"TiUserNotificationSettingsNotification";
+NSString * const kTiWatchKitExtensionRequest = @"TiWatchKitExtensionRequest";
+NSString * const kTiContinueActivity = @"TiContinueActivity";
+NSString * const kTiApplicationShortcut = @"TiApplicationShortcut";
+NSString * const kTiApplicationLaunchedFromURL = @"TiApplicationLaunchedFromURL";
 
+#ifndef TI_USE_AUTOLAYOUT
 NSString* const kTiBehaviorSize = @"SIZE";
 NSString* const kTiBehaviorFill = @"FILL";
 NSString* const kTiBehaviorAuto = @"auto";
@@ -165,6 +137,7 @@ NSString* const kTiUnitDip = @"dip";
 NSString* const kTiUnitDipAlternate = @"dp";
 NSString* const kTiUnitSystem = @"system";
 NSString* const kTiUnitPercent = @"%";
+#endif
 
 NSString* const kTiExceptionSubreason = @"TiExceptionSubreason";
 NSString* const kTiExceptionLocation = @"TiExceptionLocation";
@@ -197,7 +170,7 @@ NSString *JavascriptNameForClass(Class c)
 	}
 	return NSStringFromClass(c);
 }
-
+#ifdef TI_USE_KROLL_THREAD
 void TiThreadReleaseOnMainThread(id releasedObject,BOOL waitForFinish)
 {
 	if (releasedObject == nil) {
@@ -227,7 +200,7 @@ void TiThreadRemoveFromSuperviewOnMainThread(UIView* view,BOOL waitForFinish)
 		TiThreadPerformOnMainThread(^{[blockVar removeFromSuperview];}, waitForFinish);
 	}
 }
-
+#endif
 // NOTE: This method of batch-processing is actually fairly expensive
 // for us, and doesn't take full advantage of GCD scheduling (and requires
 // lots of mutexing). Unfortunately for now it seems to be necessary, as:
@@ -238,6 +211,7 @@ void TiThreadRemoveFromSuperviewOnMainThread(UIView* view,BOOL waitForFinish)
 // pulls from a private queue, for example) but in and of itself this could be
 // expensive (still have to semaphore the queue) and requires further research.
 
+#ifdef TI_USE_KROLL_THREAD
 NSMutableArray * TiThreadBlockQueue = nil;
 pthread_mutex_t TiThreadBlockMutex;
 pthread_cond_t TiThreadBlockCondition;
@@ -248,10 +222,14 @@ void TiThreadInitalize()
     pthread_cond_init(&TiThreadBlockCondition, NULL);
 	TiThreadBlockQueue = [[NSMutableArray alloc] initWithCapacity:10];
 }
+#endif
 
 void TiThreadPerformOnMainThread(void (^mainBlock)(void),BOOL waitForFinish)
 {
 	BOOL alreadyOnMainThread = [NSThread isMainThread];
+    
+#ifdef TI_USE_KROLL_THREAD
+
 	BOOL usesWaitSemaphore = waitForFinish && !alreadyOnMainThread;
 
 	__block dispatch_semaphore_t waitSemaphore;
@@ -329,7 +307,21 @@ void TiThreadPerformOnMainThread(void (^mainBlock)(void),BOOL waitForFinish)
 		[caughtException autorelease];
 		[caughtException raise];
 	}
+#else
+    if (waitForFinish) {
+        if (alreadyOnMainThread) {
+            mainBlock();
+        } else {
+            dispatch_sync(dispatch_get_main_queue(), mainBlock);
+        }
+    } else {
+        dispatch_async(dispatch_get_main_queue(), mainBlock);
+    }
+#endif
 }
+
+
+#ifdef TI_USE_KROLL_THREAD
 //Initializing krollContextCounter to zero.
 int krollContextCounter = 0;
 
@@ -406,3 +398,4 @@ void decrementKrollCounter(){
         pthread_mutex_unlock(&TiThreadBlockMutex);
     }
 }
+#endif

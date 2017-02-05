@@ -12,42 +12,6 @@
 
 @implementation TiUIScrollViewImpl
 
-//TIMOB-12988 Additions BEGIN.
-/*
- * If you log the scrollRectToVisible and setContentOffset calls, you can see
- * IOS is passing values we do not want. This is a hack to workaround 
- * bad contentoffset call. We calculate it correctly in our own code
- * and that call follows soon after.
- * Happens on IOS 5.1, 5.0 and 4.3. Not on iOS 6. Although values passed in are identical. Timing?
- * Delete this block when we drop support for older versions of IOS.
- */
--(void) delayContentOffset
-{
-    if(!ignore){
-        [self setContentOffset:offsetPoint animated:offsetAnimated];
-    }
-}
-
-- (void)setContentOffset:(CGPoint)contentOffset animated:(BOOL)animated
-{
-    if (delay && ![TiUtils isIOS6OrGreater]) {
-        delay = NO;
-        ignore = NO;
-        offsetPoint = contentOffset;
-        offsetAnimated = animated;
-        [self performSelector:@selector(delayContentOffset) withObject:nil afterDelay:0.2];
-        return;
-    }
-    ignore = YES;
-    [super setContentOffset:contentOffset animated:animated];
-}
-
-- (void)scrollRectToVisible:(CGRect)rect animated:(BOOL)animated
-{
-    delay = YES;
-    [super scrollRectToVisible:rect animated:animated];
-}
-//TIMOB-12988 Additions END.
 
 -(void)setTouchHandler:(TiUIView*)handler
 {
@@ -109,13 +73,30 @@
 @implementation TiUIScrollView
 @synthesize contentWidth;
 
+#ifdef TI_USE_AUTOLAYOUT
+-(void)initializeTiLayoutView
+{
+    [super initializeTiLayoutView];
+    [self setDefaultHeight:TiDimensionAutoFill];
+    [self setDefaultWidth:TiDimensionAutoFill];
+}
+#endif
+
 - (void) dealloc
 {
+#ifndef TI_USE_AUTOLAYOUT
 	RELEASE_TO_NIL(wrapperView);
+#endif
+#if IS_XCODE_8
+#ifdef USE_TI_UIREFRESHCONTROL
+    RELEASE_TO_NIL(refreshControl);
+#endif
+#endif
 	RELEASE_TO_NIL(scrollView);
 	[super dealloc];
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(UIView *)wrapperView
 {
 	if (wrapperView == nil)
@@ -129,11 +110,30 @@
 	}
 	return wrapperView;
 }
+#endif
 
 -(TiUIScrollViewImpl *)scrollView
 {
 	if(scrollView == nil)
 	{
+#ifdef TI_USE_AUTOLAYOUT
+        scrollView = [[TiUIScrollViewImpl alloc] init];
+        contentView = [[TiLayoutView alloc] init];
+        [contentView setTranslatesAutoresizingMaskIntoConstraints:NO];
+        [scrollView setTranslatesAutoresizingMaskIntoConstraints:NO];
+        [scrollView setDelegate:self];
+        
+        [contentView setViewName:@"TiScrollView.ContentView"];
+        
+        [contentView setDefaultHeight:TiDimensionAutoSize];
+        [contentView setDefaultWidth:TiDimensionAutoSize];
+        
+        [scrollView addSubview:contentView];
+        
+        [super addSubview:scrollView];
+        
+        [self setHorizontalWrap:NO];
+#else
 		scrollView = [[TiUIScrollViewImpl alloc] initWithFrame:[self bounds]];
 		[scrollView setAutoresizingMask:UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight];
 		[scrollView setBackgroundColor:[UIColor clearColor]];
@@ -142,6 +142,7 @@
 		[scrollView setDelegate:self];
         [scrollView setTouchHandler:self];
 		[self addSubview:scrollView];
+#endif
 	}
 	return scrollView;
 }
@@ -151,38 +152,92 @@
 	return [self scrollView];
 }
 
+#ifdef TI_USE_AUTOLAYOUT
+-(void)addSubview:(nonnull UIView *)view
+{
+    [contentView addSubview:view];
+}
+
+-(void)insertSubview:(nonnull UIView *)view aboveSubview:(nonnull UIView *)siblingSubview
+{
+    [contentView insertSubview:view aboveSubview:siblingSubview];
+}
+
+-(void)insertSubview:(nonnull UIView *)view atIndex:(NSInteger)index
+{
+    [contentView insertSubview:view atIndex:index];
+}
+
+-(void)insertSubview:(nonnull UIView *)view belowSubview:(nonnull UIView *)siblingSubview
+{
+    [contentView insertSubview:view belowSubview:siblingSubview];
+}
+-(TiLayoutView*)contentView
+{
+    return contentView;
+}
+
+-(void)setLayout_:(id)val
+{
+    [contentView setLayout_:val];
+}
+
+-(void)setContentWidth_:(id)val
+{
+    [contentView setWidth_:val];
+}
+
+-(void)setContentHeight_:(id)val
+{
+    [contentView setHeight_:val];
+}
+
+-(void)setOnContentLayout:(void (^)(TiLayoutView * sender, CGRect rect))onContentLayout
+{
+    [contentView setOnLayout:onContentLayout];
+}
+
+#endif
+
 -(void)setNeedsHandleContentSizeIfAutosizing
 {
+#ifndef TI_USE_AUTOLAYOUT
 	if (TiDimensionIsAuto(contentWidth) || TiDimensionIsAuto(contentHeight) ||
         TiDimensionIsAutoSize(contentWidth) || TiDimensionIsAutoSize(contentHeight) ||
         TiDimensionIsUndefined(contentWidth) || TiDimensionIsUndefined(contentHeight))
 	{
 		[self setNeedsHandleContentSize];
 	}
+#endif
 }
 
 -(void)setNeedsHandleContentSize
 {
+#ifndef TI_USE_AUTOLAYOUT
 	if (!needsHandleContentSize)
 	{
 		needsHandleContentSize = YES;
 		TiThreadPerformOnMainThread(^{[self handleContentSize];}, NO);
 	}
+#endif
 }
 
 
 -(BOOL)handleContentSizeIfNeeded
 {
+#ifndef TI_USE_AUTOLAYOUT
 	if (needsHandleContentSize)
 	{
 		[self handleContentSize];
 		return YES;
 	}
-	return NO;
+#endif
+    return NO;
 }
 
 -(void)handleContentSize
 {
+#ifndef TI_USE_AUTOLAYOUT
 	if (!needsHandleContentSize) {
 		return;
 	}
@@ -239,6 +294,7 @@
 	[self scrollViewDidZoom:scrollView];
 	needsHandleContentSize = NO;
 	[(TiUIScrollViewProxy *)[self proxy] layoutChildrenAfterContentSize:NO];
+#endif
 }
 
 -(void)frameSizeChanged:(CGRect)frame bounds:(CGRect)visibleBounds
@@ -275,6 +331,7 @@
 	[[self scrollView] setDecelerationRate:[TiUtils floatValue:value def:UIScrollViewDecelerationRateNormal]];
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(void)setContentWidth_:(id)value
 {
 	contentWidth = [TiUtils dimensionValue:value];
@@ -287,6 +344,29 @@
 	contentHeight = [TiUtils dimensionValue:value];
     [self.proxy replaceValue:value forKey:@"contentHeight" notification:NO];
 	[self performSelector:@selector(setNeedsHandleContentSize) withObject:nil afterDelay:.1];
+}
+#endif
+
+-(void)setRefreshControl_:(id)args
+{
+#if IS_XCODE_8
+#ifdef USE_TI_UIREFRESHCONTROL
+    if (![TiUtils isIOS10OrGreater]) {
+        NSLog(@"[WARN] Ti.UI.RefreshControl inside Ti.UI.ScrollView is only available in iOS 10 and later.");
+        return;
+    }
+    ENSURE_SINGLE_ARG_OR_NIL(args,TiUIRefreshControlProxy);
+    [[refreshControl control] removeFromSuperview];
+    RELEASE_TO_NIL(refreshControl);
+    [[self proxy] replaceValue:args forKey:@"refreshControl" notification:NO];
+    if (args != nil) {
+        refreshControl = [args retain];
+        [[self scrollView] setRefreshControl:[refreshControl control]];
+    }
+#endif
+#else
+    NSLog(@"[WARN] Ti.UI.RefreshControl inside Ti.UI.ScrollView is only available in iOS 10 and later.");
+#endif
 }
 
 -(void)setShowHorizontalScrollIndicator_:(id)value
@@ -314,6 +394,13 @@
     BOOL scrollingEnabled = [TiUtils boolValue:enabled def:YES];
     [[self scrollView] setScrollEnabled:scrollingEnabled];
     [[self proxy] replaceValue:NUMBOOL(scrollingEnabled) forKey:@"scrollingEnabled" notification:NO];
+}
+
+-(void)setKeyboardDismissMode_:(id)value
+{
+    ENSURE_TYPE(value, NSNumber);
+    [[self scrollView] setKeyboardDismissMode:[TiUtils intValue:value def:UIScrollViewKeyboardDismissModeNone]];
+    [[self proxy] replaceValue:value forKey:@"keyboardDismissMode" notification:NO];
 }
 
 -(void)setScrollsToTop_:(id)value
@@ -392,12 +479,14 @@
 	[(id<UIScrollViewDelegate>)[self proxy] scrollViewDidScroll:scrollView_];
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView
 {
 	return [self wrapperView];
 }
+#endif
 
-- (void)scrollViewDidEndZooming:(UIScrollView *)scrollView_ withView:(UIView *)view atScale:(float)scale 
+- (void)scrollViewDidEndZooming:(UIScrollView *)scrollView_ withView:(UIView *)view atScale:(CGFloat)scale
 {
 	// scale between minimum and maximum. called after any 'bounce' animations
 	[(id<UIScrollViewDelegate>)[self proxy] scrollViewDidEndZooming:scrollView withView:(UIView*)view atScale:scale];
@@ -405,6 +494,7 @@
 
 - (void)scrollViewDidZoom:(UIScrollView *)scrollView_
 {
+#ifndef TI_USE_AUTOLAYOUT
 	CGSize boundsSize = scrollView.bounds.size;
     CGRect frameToCenter = wrapperView.frame;
 	if (TiDimensionIsAuto(contentWidth) || TiDimensionIsAutoSize(contentWidth) || TiDimensionIsUndefined(contentWidth)) {
@@ -421,10 +511,11 @@
 			frameToCenter.origin.y = 0;
 		}
 	}
-    wrapperView.frame = frameToCenter;	
+    wrapperView.frame = frameToCenter;
+#endif
 }
 
-- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView_  
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView_
 {
 	// Tells the delegate when the scroll view is about to start scrolling the content.
 	[(id<UIScrollViewDelegate>)[self proxy] scrollViewWillBeginDragging:scrollView_];
@@ -445,10 +536,12 @@
 
 -(void)scrollToShowView:(TiUIView *)firstResponderView withKeyboardHeight:(CGFloat)keyboardTop
 {
+#ifndef TI_USE_AUTOLAYOUT
     if ([scrollView isScrollEnabled]) {
         CGRect responderRect = [wrapperView convertRect:[firstResponderView bounds] fromView:firstResponderView];
         OffsetScrollViewForRect(scrollView,keyboardTop,minimumContentHeight,responderRect);
     }
+#endif
 }
 
 @end

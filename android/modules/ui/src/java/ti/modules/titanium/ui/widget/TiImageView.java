@@ -29,6 +29,8 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.ImageView.ScaleType;
 import android.widget.ZoomControls;
+import android.graphics.PorterDuff.Mode;
+import org.appcelerator.titanium.util.TiColorHelper;
 
 public class TiImageView extends ViewGroup implements Handler.Callback, OnClickListener
 {
@@ -61,7 +63,7 @@ public class TiImageView extends ViewGroup implements Handler.Callback, OnClickL
 	private boolean viewHeightDefined;
 
 	private int orientation;
-	
+	private int tintColor;
 	private WeakReference<TiViewProxy> proxy;
 
 	public TiImageView(Context context) {
@@ -362,7 +364,6 @@ public class TiImageView extends ViewGroup implements Handler.Callback, OnClickL
 		// so that it doesn't get the content height/width
 		if (!viewWidthDefined || !viewHeightDefined) {
 			Drawable d = imageView.getDrawable();
-
 			if (d != null) {
 				float aspectRatio = 1;
 				int w = MeasureSpec.getSize(widthMeasureSpec);
@@ -371,8 +372,9 @@ public class TiImageView extends ViewGroup implements Handler.Callback, OnClickL
 				int ih = d.getIntrinsicHeight();
 				int iw = d.getIntrinsicWidth();
 				if (ih != 0 && iw != 0) {
-					aspectRatio = ih / iw;
+					aspectRatio = 1f * ih / iw;
 				}
+
 				if (viewWidthDefined) {
 					maxWidth = w;
 					maxHeight = Math.round(w * aspectRatio);
@@ -484,4 +486,18 @@ public class TiImageView extends ViewGroup implements Handler.Callback, OnClickL
 		}
 		return true;
 	}
+	
+	public void setTintColor(String color){
+		this.tintColor = TiColorHelper.parseColor(color);
+		if (this.tintColor == 0) {
+			imageView.clearColorFilter();
+		} else {
+			imageView.setColorFilter(this.tintColor, Mode.MULTIPLY);
+		}
+	}
+
+	public int getTintColor(){
+		return tintColor;
+	}
+	
 }

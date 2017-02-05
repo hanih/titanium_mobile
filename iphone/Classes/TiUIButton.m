@@ -18,11 +18,22 @@
 
 #pragma mark Internal
 
+#ifdef TI_USE_AUTOLAYOUT
+-(void)initializeTiLayoutView
+{
+    [super initializeTiLayoutView];
+    [self setDefaultHeight:TiDimensionAutoSize];
+    [self setDefaultWidth:TiDimensionAutoSize];
+}
+#endif
+
 -(void)dealloc
 {
 	[button removeTarget:self action:NULL forControlEvents:UIControlEventAllTouchEvents];
 	RELEASE_TO_NIL(button);
+#ifndef TI_USE_AUTOLAYOUT
 	RELEASE_TO_NIL(viewGroupWrapper);
+#endif
 	RELEASE_TO_NIL(backgroundImageCache)
 	RELEASE_TO_NIL(backgroundImageUnstretchedCache);
 	[super dealloc];
@@ -35,11 +46,16 @@
 		return nil;
 	}
 	
-	if((viewGroupWrapper == superResult) || ([superResult isKindOfClass:[TiUIView class]] 
+#ifndef TI_USE_AUTOLAYOUT
+	if((viewGroupWrapper == superResult) || ([superResult isKindOfClass:[TiUIView class]]
 	   && ![(TiUIView*)superResult touchEnabled])) {
 		return [self button];
 	}
-
+#else
+    if ([[superResult superview] isKindOfClass:[TiUIView class]] || [superResult isKindOfClass:[TiUIView class]]) {
+        return [self button];
+    }
+#endif
 	return superResult;
 }
 
@@ -52,7 +68,11 @@
 
 -(void)setHighlighting:(BOOL)isHiglighted
 {
-	for (TiUIView * thisView in [viewGroupWrapper subviews])
+#ifndef TI_USE_AUTOLAYOUT
+    for (TiUIView * thisView in [viewGroupWrapper subviews])
+#else
+    for (TiUIView * thisView in [self subviews])
+#endif
 	{
 		if ([thisView respondsToSelector:@selector(setHighlighted:)])
 		{
@@ -64,31 +84,37 @@
 -(void)updateBackgroundImage
 {
 	CGRect bounds = [self bounds];
+#ifndef TI_USE_AUTOLAYOUT
 	[button setFrame:bounds];
+#endif
 	if ((backgroundImageCache == nil) || (bounds.size.width == 0) || (bounds.size.height == 0)) {
 		[button setBackgroundImage:nil forState:UIControlStateNormal];
 		return;
 	}
 	CGSize imageSize = [backgroundImageCache size];
-	if((bounds.size.width>=imageSize.width) && (bounds.size.height>=imageSize.height)){
+	if((bounds.size.width>=imageSize.width) && (bounds.size.height>=imageSize.height)) {
 		[button setBackgroundImage:backgroundImageCache forState:UIControlStateNormal];
-		return;
-	}
-    //If the bounds are smaller than the image size render it in an imageView and get the image of the view.
-    //Should be pretty inexpensive since it happens rarely. TIMOB-9166
-    CGSize unstrechedSize = (backgroundImageUnstretchedCache != nil) ? [backgroundImageUnstretchedCache size] : CGSizeZero;
-    if (backgroundImageUnstretchedCache == nil || !CGSizeEqualToSize(unstrechedSize,bounds.size) ) {
-        UIImageView* theView = [[UIImageView alloc] initWithFrame:bounds];
-        [theView setImage:backgroundImageCache];
-        UIGraphicsBeginImageContextWithOptions(bounds.size, [theView.layer isOpaque], 0.0);
-        [theView.layer renderInContext:UIGraphicsGetCurrentContext()];
-        UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-        RELEASE_TO_NIL(backgroundImageUnstretchedCache);
-        backgroundImageUnstretchedCache = [image retain];
-        [theView release];
+    } else {
+        //If the bounds are smaller than the image size render it in an imageView and get the image of the view.
+        //Should be pretty inexpensive since it happens rarely. TIMOB-9166
+        CGSize unstrechedSize = (backgroundImageUnstretchedCache != nil) ? [backgroundImageUnstretchedCache size] : CGSizeZero;
+        if (backgroundImageUnstretchedCache == nil || !CGSizeEqualToSize(unstrechedSize,bounds.size) ) {
+            UIImageView* theView = [[UIImageView alloc] initWithFrame:bounds];
+            [theView setImage:backgroundImageCache];
+            UIGraphicsBeginImageContextWithOptions(bounds.size, [theView.layer isOpaque], 0.0);
+            [theView.layer renderInContext:UIGraphicsGetCurrentContext()];
+            UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+            UIGraphicsEndImageContext();
+            RELEASE_TO_NIL(backgroundImageUnstretchedCache);
+            backgroundImageUnstretchedCache = [image retain];
+            [theView release];
+        }
+        [button setBackgroundImage:backgroundImageUnstretchedCache forState:UIControlStateNormal];
     }
-	[button setBackgroundImage:backgroundImageUnstretchedCache forState:UIControlStateNormal];	
+    
+#ifdef TI_USE_AUTOLAYOUT
+    [self sendSubviewToBack:button];
+#endif
 }
 
 -(void)frameSizeChanged:(CGRect)frame bounds:(CGRect)bounds
@@ -128,7 +154,7 @@
             return;
     }
     [self setHighlighting:button.highlighted];
-    NSMutableDictionary *evt = [NSMutableDictionary dictionaryWithDictionary:[TiUtils pointToDictionary:[touch locationInView:self]]];
+    NSMutableDictionary *evt = [NSMutableDictionary dictionaryWithDictionary:[TiUtils touchPropertiesToDictionary:touch andView:self]];
     if ((fireActionEvent != nil) && [self.proxy _hasListeners:fireActionEvent]) {
         [self.proxy fireEvent:fireActionEvent withObject:evt];
     }
@@ -141,9 +167,7 @@
 {
 	if (button==nil)
 	{
-        BOOL hasImage = [self.proxy valueForKey:@"backgroundImage"]!=nil;
-		
-        UIButtonType defaultType = (hasImage==YES) ? UIButtonTypeCustom : UIButtonTypeRoundedRect;
+		UIButtonType defaultType = [self hasImageProperties] ? UIButtonTypeCustom : UIButtonTypeRoundedRect;
 		style = [TiUtils intValue:[self.proxy valueForKey:@"style"] def:defaultType];
 		UIView *btn = [TiButtonUtil buttonWithType:style];
 		button = (UIButton*)[btn retain];
@@ -155,11 +179,18 @@
 		[button addTarget:self action:@selector(controlAction:forEvent:) forControlEvents:UIControlEventAllTouchEvents];
 		button.exclusiveTouch = YES;
 	}
+#ifndef TI_USE_AUTOLAYOUT
 	if ((viewGroupWrapper != nil) && ([viewGroupWrapper	superview]!=button)) {
 		[viewGroupWrapper setFrame:[button bounds]];
 		[button addSubview:viewGroupWrapper];
 	}
+#endif
 	return button;
+}
+
+- (BOOL)hasImageProperties
+{
+    return [self.proxy valueForKey:@"backgroundImage"] || [self.proxy valueForKey:@"backgroundSelectedImage"] || [self.proxy valueForKey:@"backgroundSelectedColor"];
 }
 
 - (id)accessibilityElement
@@ -167,6 +198,7 @@
 	return [self button];
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(UIView *) viewGroupWrapper
 {
 	if (viewGroupWrapper == nil) {
@@ -184,7 +216,7 @@
 	}
 	return viewGroupWrapper;
 }
-
+#endif
 #pragma mark Public APIs
 
 -(void)setStyle_:(id)style_
@@ -235,8 +267,13 @@
 	[backgroundImageCache release];
 	RELEASE_TO_NIL(backgroundImageUnstretchedCache);
 	backgroundImageCache = [[self loadImage:value] retain];
-    self.backgroundImage = value;
+	self.backgroundImage = value;
 	[self updateBackgroundImage];
+}
+
+-(void)setBackgroundSelectedColor_:(id)value
+{
+    [[self button] setBackgroundImage:[TiUtils imageWithColor:[[TiUtils colorValue:value] _color]] forState:UIControlStateHighlighted];
 }
 
 -(void)setBackgroundSelectedImage_:(id)value
@@ -323,7 +360,7 @@
         [[self button] setTitleShadowColor:nil forState:UIControlStateNormal];
     } else {
         color = [TiUtils colorValue:color];
-        [[self button] setTitleShadowColor:[color color] forState:UIControlStateNormal];
+        [[self button] setTitleShadowColor:[(TiColor*)color color] forState:UIControlStateNormal];
     }
 }
 
@@ -334,23 +371,84 @@
 	[[[self button] titleLabel] setShadowOffset:size];
 }
 
+-(void)setVerticalAlign_:(id)align
+{
+    button = [self button];
+    UIControlContentVerticalAlignment alignment = UIControlContentVerticalAlignmentCenter;
+    if ([align isKindOfClass:[NSString class]]) {
+        if ([align isEqualToString:@"top"])
+        {
+            alignment = UIControlContentVerticalAlignmentTop;
+        }
+        else if ([align isEqualToString:@"bottom"])
+        {
+            alignment = UIControlContentVerticalAlignmentBottom;
+        }
+        else if ([align isEqualToString:@"center"])
+        {
+            alignment = UIControlContentVerticalAlignmentCenter;
+        }
+    } else {
+        alignment = (UIControlContentVerticalAlignment)[TiUtils intValue:align def:(int)UIControlContentVerticalAlignmentCenter];
+    }
+    UIEdgeInsets inset = [button contentEdgeInsets];
+
+    switch (alignment) {
+        case UIControlContentVerticalAlignmentTop:
+        {
+            inset.top = 10;
+            inset.bottom = 0;
+            break;
+        }
+        case UIControlContentVerticalAlignmentBottom:
+        {
+            inset.top = 0;
+            inset.bottom = 10;
+            break;
+        }
+        default:
+        {
+            inset.top = 0;
+            inset.bottom = 0;
+            break;
+        }
+    }
+    [button setContentVerticalAlignment:alignment];
+    [button setContentEdgeInsets:inset];
+}
+
 -(void)setTextAlign_:(id)align
 {
-	UIButton *b = [self button];
-	if ([align isEqual:@"left"])
-	{
-		b.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-		b.contentEdgeInsets = UIEdgeInsetsMake(0,10,0,0);
-	}
-	else if ([align isEqual:@"right"])
-	{
-		b.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
-		b.contentEdgeInsets = UIEdgeInsetsMake(0,0,10,0);
-	}
-	else if ([align isEqual:@"center"])
-	{
-		b.contentHorizontalAlignment = UIControlContentHorizontalAlignmentCenter;
-	}
+    button = [self button];
+    NSTextAlignment alignment = [TiUtils textAlignmentValue:align];
+    UIControlContentHorizontalAlignment horizontalAlignment = UIControlContentHorizontalAlignmentCenter;
+    
+    UIEdgeInsets inset = [button contentEdgeInsets];
+    switch (alignment) {
+        case NSTextAlignmentLeft:
+        {
+            horizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+            inset.left = 10;
+            inset.right = 0;
+            break;
+        }
+        case NSTextAlignmentRight:
+        {
+            horizontalAlignment = UIControlContentHorizontalAlignmentRight;
+            inset.right = 10;
+            inset.left = 0;
+            break;
+        }
+        default:
+        {
+            horizontalAlignment = UIControlContentHorizontalAlignmentCenter;
+            inset.right = 0;
+            inset.left = 0;
+            break;
+        }
+    }
+    [button setContentHorizontalAlignment:horizontalAlignment];
+    [button setContentEdgeInsets:inset];
 }
 
 -(CGFloat)contentWidthForWidth:(CGFloat)value

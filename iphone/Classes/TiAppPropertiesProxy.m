@@ -88,7 +88,7 @@ if (![self propertyExists:key]) return defaultValue; \
 -(id)getInt:(id)args
 {
 	GETPROP
-	return [NSNumber numberWithInt:[defaultsObject integerForKey:key]];
+	return NUMINTEGER([defaultsObject integerForKey:key]);
 }
 
 -(id)getString:(id)args
@@ -102,11 +102,15 @@ if (![self propertyExists:key]) return defaultValue; \
 	GETPROP
 	NSArray *value = [defaultsObject arrayForKey:key];
 	NSMutableArray *array = [[[NSMutableArray alloc] initWithCapacity:[value count]] autorelease];
+    
 	[(NSArray *)value enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+		id result = obj;
 		if ([obj isKindOfClass:[NSData class]] && [_defaultsNull isEqualToData:obj]) {
-			obj = [NSNull null];
+			result = [NSNull null];
+		} else if ([obj isKindOfClass:[NSDictionary class]]) {
+			result = [self bridgedDictionaryFromDictionary:obj withType:[NSData class] toType:[NSNull class]];
 		}
-		[array addObject:obj];
+		[array addObject:result];
 	}];
 	return array;
 }
@@ -142,7 +146,31 @@ if ([self propertyExists:key] && [ [defaultsObject objectForKey:key] isEqual:val
     return;\
 }\
 
-
+- (NSDictionary*)bridgedDictionaryFromDictionary:(NSDictionary*)dictionary withType:(Class)withType toType:(Class)toType
+{
+    NSMutableDictionary *result = [NSMutableDictionary dictionaryWithCapacity:[[dictionary allKeys] count]];
+    
+    for (NSUInteger i = 0; i < [[dictionary allKeys] count]; i++) {
+        id key = [[dictionary allKeys] objectAtIndex:i];
+        
+        if ([[dictionary objectForKey:key] isKindOfClass:withType]) {
+            
+            if (withType == [NSData class]) {
+                [result setObject:[NSNull null] forKey:key];
+            } else if (withType == [NSNull class]) {
+                [result setObject:_defaultsNull forKey:key];
+            } else {
+                NSLog(@"Unhandled bridge: %@", withType);
+            }
+        } else if ([[dictionary objectForKey:key] isKindOfClass:[NSDictionary class]]) {
+            [result setObject:[self bridgedDictionaryFromDictionary:[dictionary objectForKey:key] withType:withType toType:toType] forKey:key];
+        } else {
+            [result setObject:[dictionary objectForKey:key] forKey:key];
+        }
+    }
+    
+    return result;
+}
 
 -(void)setBool:(id)args
 {
@@ -175,16 +203,18 @@ if ([self propertyExists:key] && [ [defaultsObject objectForKey:key] isEqual:val
 -(void)setList:(id)args
 {
 	SETPROP
-	if ([value isKindOfClass:[NSArray class]]) {
-		NSMutableArray *array = [[[NSMutableArray alloc] initWithCapacity:[value count]] autorelease];
-		[(NSArray *)value enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
-			if ([obj isKindOfClass:[NSNull class]]) {
-				obj = _defaultsNull;
-			}
-			[array addObject:obj];
-		}];
-		value = array;
-	}
+    ENSURE_TYPE(value, NSArray);
+    
+	NSMutableArray *array = [[[NSMutableArray alloc] initWithCapacity:[(NSArray*)value count]] autorelease];
+	[(NSArray *)value enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+		if ([obj isKindOfClass:[NSNull class]]) {
+			obj = _defaultsNull;
+		} else if ([obj isKindOfClass:[NSDictionary class]]) {
+			obj = [self bridgedDictionaryFromDictionary:obj withType:[NSNull class] toType:[NSData class]];
+		}
+		[array addObject:obj];
+	}];
+	value = array;
 	[defaultsObject setObject:value forKey:key];
 	[defaultsObject synchronize];
 }
@@ -208,11 +238,14 @@ if ([self propertyExists:key] && [ [defaultsObject objectForKey:key] isEqual:val
 	[defaultsObject synchronize];
 }
 
--(void)removeAllProperties {
+-(void)removeAllProperties:(id)unused
+{
 	NSArray *keys = [[defaultsObject dictionaryRepresentation] allKeys];
 	for(NSString *key in keys) {
 		[defaultsObject removeObjectForKey:key];
 	}
+	
+	[defaultsObject synchronize];
 }
 
 -(id)hasProperty:(id)args
@@ -223,7 +256,7 @@ if ([self propertyExists:key] && [ [defaultsObject objectForKey:key] isEqual:val
     return NUMBOOL(inUserDefaults || inTiAppProperties);
 }
 
--(id)listProperties:(id)args
+-(id)listProperties:(id)unused
 {
     NSMutableArray *array = [NSMutableArray array];
     [array addObjectsFromArray:[[defaultsObject dictionaryRepresentation] allKeys]];

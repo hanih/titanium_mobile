@@ -112,33 +112,7 @@
     if (stretchableImage == nil || recapStretchableImage) {
         [stretchableImage release];
         UIImage *theImage = [self fullImage];
-        CGFloat maxWidth = [theImage size].width;
-        CGFloat maxHeight = [theImage size].height;
-        
-        NSInteger left = (TiDimensionIsAuto(leftCap) || TiDimensionIsUndefined(leftCap) || leftCap.value == 0) ?
-                                maxWidth/2  : 
-                                TiDimensionCalculateValue(leftCap, maxWidth);
-        NSInteger top = (TiDimensionIsAuto(topCap) || TiDimensionIsUndefined(topCap) || topCap.value == 0) ? 
-                                maxHeight/2  : 
-                                TiDimensionCalculateValue(topCap, maxHeight);
-        
-        if (left >= maxWidth) {
-            left = maxWidth - 2;
-        }
-        if (top >= maxHeight) {
-            top = maxHeight - 2;
-        }
-            
-        NSInteger right = left;
-        NSInteger bottom = top;
-            
-        if ((left + right) >= maxWidth) {
-            right = maxWidth - (left + 1);
-        }
-        if ((top + bottom) >= maxHeight) {
-            bottom = maxHeight - (top + 1);
-        }
-        stretchableImage = [[theImage resizableImageWithCapInsets:UIEdgeInsetsMake(top, left, bottom, right) resizingMode:UIImageResizingModeStretch] retain];
+        stretchableImage = [[UIImageResize resizedImageWithLeftCap:leftCap topCap:topCap image:theImage] retain];
         recapStretchableImage = NO;
     }
 	return stretchableImage;
@@ -246,8 +220,12 @@
     if (!local && imageData != nil) {
         NSFileManager* fm = [NSFileManager defaultManager];
         NSString* path = localPath;
-        if (hires && [TiUtils isRetinaDisplay]) { // Save as @2x w/retina
-            path = [NSString stringWithFormat:@"%@@2x.%@", [localPath stringByDeletingPathExtension], [localPath pathExtension]];
+        if (hires) {
+            if ([TiUtils isRetinaHDDisplay]) { // Save as @3x w/retina-hd
+                path = [NSString stringWithFormat:@"%@@3x.%@", [localPath stringByDeletingPathExtension], [localPath pathExtension]];
+            } else if ([TiUtils isRetinaDisplay]) { // Save as @2x w/retina
+                path = [NSString stringWithFormat:@"%@@2x.%@", [localPath stringByDeletingPathExtension], [localPath pathExtension]];
+            }
         }
         
         if ([fm isDeletableFileAtPath:path]) {
@@ -496,11 +474,39 @@ DEFINE_EXCEPTIONS
             NSLog(@"[CACHE DEBUG] Loading locally from path %@", path);
 #endif
 			BOOL scaleUp = NO;
-			if ([TiUtils isRetinaDisplay] && [path rangeOfString:@"@2x"].location!=NSNotFound)
+			if (([TiUtils isRetinaDisplay] && [path rangeOfString:@"@2x"].location!=NSNotFound) || ([TiUtils isRetinaHDDisplay] && [path rangeOfString:@"@3x"].location!=NSNotFound))
 			{
 				scaleUp = YES;
 			}
-			UIImage * resultImage = [UIImage imageWithContentsOfFile:path];
+			UIImage *resultImage = nil;
+			NSRange range = [path rangeOfString:@".app"];
+			NSString *imageArg = nil;
+			if (range.location != NSNotFound) {
+				imageArg = [path substringFromIndex:range.location+5];
+			}
+			//remove suffixes.
+			imageArg = [imageArg stringByReplacingOccurrencesOfString:@"@3x" withString:@""];
+			imageArg = [imageArg stringByReplacingOccurrencesOfString:@"@2x" withString:@""];
+			imageArg = [imageArg stringByReplacingOccurrencesOfString:@"~iphone" withString:@""];
+			imageArg = [imageArg stringByReplacingOccurrencesOfString:@"~ipad" withString:@""];
+			if (imageArg != nil) {
+				unsigned char digest[CC_SHA1_DIGEST_LENGTH];
+				NSData *stringBytes = [imageArg dataUsingEncoding: NSUTF8StringEncoding];
+				if (CC_SHA1([stringBytes bytes], (CC_LONG)[stringBytes length], digest)) {
+					// SHA-1 hash has been calculated and stored in 'digest'.
+					NSMutableString *sha = [[NSMutableString alloc] init];
+					for (int i = 0; i < CC_SHA1_DIGEST_LENGTH; i++) {
+						[sha appendFormat:@"%02x", digest[i]];
+					}
+					[sha appendString:@"."];
+					[sha appendString:[url pathExtension]];
+					resultImage = [UIImage imageNamed:sha];
+					RELEASE_TO_NIL(sha)
+				}
+			}
+			if (resultImage == nil) {
+				resultImage = [UIImage imageWithContentsOfFile:path];
+			}
 			if (scaleUp && [self imageScale:resultImage]==1.0)
 			{
 				// on the ipad running iphone app in emulation mode, this won't exist when
@@ -508,7 +514,7 @@ DEFINE_EXCEPTIONS
 				if ([UIImage instancesRespondToSelector:@selector(imageWithCGImage:scale:orientation:)])
 				{
 					// if we specified a 2x, we need to upscale it
-					resultImage = [UIImage imageWithCGImage:[resultImage CGImage] scale:2.0 orientation:[resultImage imageOrientation]];
+					resultImage = [UIImage imageWithCGImage:[resultImage CGImage] scale:([TiUtils isRetinaHDDisplay] ? 3.0 : 2.0) orientation:[resultImage imageOrientation]];
 				}
 			}
 		    result = [self setImage:resultImage forKey:url hires:NO];
@@ -550,6 +556,7 @@ DEFINE_EXCEPTIONS
 	
     APSHTTPRequest *req = [[[APSHTTPRequest alloc] init] autorelease];
     [req setUrl:url];
+    [req setMethod:@"GET"];
     [req addRequestHeader:@"User-Agent" value:[[TiApp app] userAgent]];
     [req setSynchronous:YES];
     [[TiApp app] startNetwork];
@@ -573,7 +580,7 @@ DEFINE_EXCEPTIONS
 	return [self loadImmediateImage:url withSize:CGSizeZero];
 }
 
--(UIImage *)loadImmediateImage:(NSURL *)url withSize:(CGSize)imageSize;
+-(UIImage *)loadImmediateImage:(NSURL *)url withSize:(CGSize)imageSize
 {
 	return [[self entryForKey:url] imageForSize:imageSize];
 }
@@ -821,7 +828,6 @@ DEFINE_EXCEPTIONS
 {
 	[[TiApp app] stopNetwork];
 	ImageLoaderRequest *req = [[request userInfo] objectForKey:@"request"];
-	NSError *error = [response error];
     
 	if ([request cancelled]) {
         if ([[req delegate] respondsToSelector:@selector(imageLoadCancelled:)]) {

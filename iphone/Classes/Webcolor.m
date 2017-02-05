@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -63,9 +63,9 @@ int toASCIIHexValue(unichar c) {return (c & 0xF) + (c < 'A' ? 0 : 9); }
 					   [UIColor clearColor],@"transparent",
 					   [UIColor groupTableViewBackgroundColor],@"stripped",
 					   [UIColor groupTableViewBackgroundColor],IOS_COLOR_GROUP_TABLEVIEW_BACKGROUND,
-					   [UIColor scrollViewTexturedBackgroundColor],IOS_COLOR_SCROLLVIEW_TEXTURED_BACKGROUND,
-					   [UIColor viewFlipsideBackgroundColor],IOS_COLOR_VIEW_FLIPSIDE_BACKGROUND,
-                       
+					   [UIColor clearColor],IOS_COLOR_SCROLLVIEW_TEXTURED_BACKGROUND,
+					   [UIColor clearColor],IOS_COLOR_VIEW_FLIPSIDE_BACKGROUND,
+					   [UIColor clearColor],IOS_COLOR_UNDER_PAGE_BACKGROUND,
 					   // these are also defined by the W3C HTML spec so we support them
 					   [Webcolor colorForHex:@"0ff"],@"aqua",
 					   [Webcolor colorForHex:@"f0f"],@"fuchsia",
@@ -87,7 +87,6 @@ int toASCIIHexValue(unichar c) {return (c & 0xF) + (c < 'A' ? 0 : 9); }
 					   black,@"ff000000",
 					   nil];
 	}
-	[colorLookup setObject:[UIColor underPageBackgroundColor] forKey:IOS_COLOR_UNDER_PAGE_BACKGROUND];
 	if ([colorName hasPrefix:@"#"])
 	{
 		colorName = [colorName substringFromIndex:1];
@@ -117,7 +116,7 @@ int toASCIIHexValue(unichar c) {return (c & 0xF) + (c < 'A' ? 0 : 9); }
 
 +(UIColor*)colorForRGBFunction:(NSString*)functionString
 {
-	int stringLength=[functionString length];
+	NSUInteger stringLength=[functionString length];
 	NSRange openParensRange = [functionString rangeOfString:@"("];
 	if (openParensRange.location == NSNotFound) 
 	{
@@ -132,7 +131,7 @@ int toASCIIHexValue(unichar c) {return (c & 0xF) + (c < 'A' ? 0 : 9); }
 	
 	NSRange searchRange;
 	NSRange nextTokenRange;
-	int segmentLength;
+	NSUInteger segmentLength;
 	
 	searchRange.location = openParensRange.location + 1; //Skipping starting (
 	searchRange.length = stringLength - searchRange.location - 1; //-1 for terminating ).
@@ -178,46 +177,49 @@ int toASCIIHexValue(unichar c) {return (c & 0xF) + (c < 'A' ? 0 : 9); }
 
 +(UIColor*)colorForHex:(NSString*)hexCode
 {
-    unsigned length = [hexCode length];
-	float alpha = 1.0;
+    NSUInteger length = [hexCode length];
+    float alpha = 1.0;
     if ((length != 3) && (length != 4) && (length != 6) && (length!=7) && (length != 8))
-	{
-		DebugLog(@"[WARN] Hex color passed looks invalid: %@",hexCode);
+    {
+        if ([hexCode rangeOfString:@"rgba"].location == NSNotFound)
+        {
+            DebugLog(@"[WARN] Hex color passed looks invalid: %@",hexCode);
+        }
         return nil;
-	}
+    }
     unsigned value = 0;
 	
-    for (size_t i = 0; i < length; ++i) 
-	{
-		unichar thisChar = [hexCode characterAtIndex:i];
-		if (thisChar=='#') continue;
+    for (size_t i = 0; i < length; ++i)
+    {
+        unichar thisChar = [hexCode characterAtIndex:i];
+        if (thisChar=='#') continue;
         if (!isASCIIHexDigit(thisChar))
-		{
+        {
             return nil;
-		}
+        }
         value <<= 4;
         value |= toASCIIHexValue(thisChar);
     }
+
+    if (length < 6)
+    {
+        value = ((value & 0xF000) << 16) |
+        ((value & 0xFF00) << 12) |
+        ((value & 0xFF0) << 8) |
+        ((value & 0xFF) << 4) |
+        (value & 0xF);
+    }
 	
-	if (length < 6) 
-	{
-		value = ((value & 0xF000) << 16) |
-		((value & 0xFF00) << 12) |
-		((value & 0xFF0) << 8) |
-		((value & 0xFF) << 4) |
-		(value & 0xF);
-	}
+    if((length % 4)==0)
+    {
+        alpha = ((value >> 24) & 0xFF) / 255.0;
+    }
 	
-	if((length % 4)==0)
-	{
-		alpha = ((value >> 24) & 0xFF) / 255.0;
-	}
+    int red = (value >> 16) & 0xFF;
+    int green = (value >> 8) & 0xFF;
+    int blue = value & 0xFF;
 	
-	int red = (value >> 16) & 0xFF;
-	int green = (value >> 8) & 0xFF;
-	int blue = value & 0xFF;
-	
-	return RGBACOLOR(red,green,blue,alpha);
+    return RGBACOLOR(red,green,blue,alpha);
 }
 
 +(void)flushCache

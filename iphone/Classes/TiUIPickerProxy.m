@@ -331,20 +331,21 @@ USE_VIEW_FOR_VERIFY_WIDTH
 	//TODO: This is playing with fire here.
 	NSArray * columnArray = [self columns];
 
-	int columnIndex = NSNotFound;
+	NSUInteger columnIndex = NSNotFound;
 	if([column isKindOfClass:[TiUIPickerColumnProxy class]])
 	{
 		columnIndex = [columnArray indexOfObject:column];
 	}
 	else
 	{
-		columnIndex = [TiUtils intValue:column def:NSNotFound];
+		columnIndex = [TiUtils intValue:column def:INT_MAX];
 	}
 
 	ENSURE_VALUE_RANGE(columnIndex,0,[columnArray count]-1);
-	[self makeViewPerformSelector:@selector(reloadColumn:) withObject:NUMINT(columnIndex) createIfNeeded:YES waitUntilDone:NO];
+	[self makeViewPerformSelector:@selector(reloadColumn:) withObject:NUMUINTEGER(columnIndex) createIfNeeded:YES waitUntilDone:NO];
 }
 
+#ifndef TI_USE_AUTOLAYOUT
 -(TiDimension)defaultAutoWidthBehavior:(id)unused
 {
     return TiDimensionAutoSize;
@@ -353,7 +354,7 @@ USE_VIEW_FOR_VERIFY_WIDTH
 {
     return TiDimensionAutoSize;
 }
-
+#endif
 @end
 
 #endif

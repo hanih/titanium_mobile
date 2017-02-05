@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2010 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -61,23 +61,6 @@
 #endif
 #ifndef AsyncUdpSocketDelegate
 #define AsyncUdpSocketDelegate __TI_NS_SYMBOL(AsyncUdpSocketDelegate)
-#endif
-
-// MGSplitView
-#ifndef MGSplitViewController
-#define MGSplitViewController __TI_NS_SYMBOL(MGSplitViewController)
-#endif
-#ifndef MGSplitCornersView
-#define MGSplitCornersView __TI_NS_SYMBOL(MGSplitCornersView)
-#endif
-#ifndef MGSplitDividerView
-#define MGSplitDividerView __TI_NS_SYMBOL(MGSplitDividerView)
-#endif
-#ifndef MGSplitViewControllerDelegate
-#define MGSplitViewControllerDelegate __TI_NS_SYMBOL(MGSplitViewControllerDelegate)
-#endif
-#ifndef MGSplitView
-#define MGSplitView __TI_NS_SYMBOL(MGSplitView)
 #endif
 
 // Reachalility
@@ -180,27 +163,10 @@
 #define AudioStreamer __TI_NS_SYMBOL(AudioStreamer)
 #endif
 
-// AQRecorder
-#ifndef AQRecorder
-#define AQRecorder __TI_NS_SYMBOL(AQRecorder)
-#endif
 
 // SCListener
 #ifndef SCListener
 #define SCListener __TI_NS_SYMBOL(SCListener)
-#endif
-
-// CAStreamBasicDescription
-#ifndef CAStreamBasicDescription
-#define CAStreamBasicDescription __TI_NS_SYMBOL(CAStreamBasicDescription)
-#endif
-
-// CAXException
-#ifndef CAX4CCString
-#define CAX4CCString __TI_NS_SYMBOL(CAX4CCString)
-#endif
-#ifndef CAXException
-#define CAXException __TI_NS_SYMBOL(CAXException)
 #endif
 
 // Base64Transcoder

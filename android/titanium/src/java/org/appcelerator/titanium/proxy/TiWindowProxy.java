@@ -7,7 +7,9 @@
 package org.appcelerator.titanium.proxy;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollProxy;
@@ -17,21 +19,31 @@ import org.appcelerator.kroll.common.Log;
 import org.appcelerator.kroll.common.TiMessenger;
 import org.appcelerator.titanium.TiApplication;
 import org.appcelerator.titanium.TiBaseActivity;
+import org.appcelerator.titanium.TiBlob;
 import org.appcelerator.titanium.TiC;
+import org.appcelerator.titanium.util.TiConvert;
 import org.appcelerator.titanium.util.TiOrientationHelper;
 import org.appcelerator.titanium.util.TiUIHelper;
+import org.appcelerator.titanium.util.TiWeakList;
 import org.appcelerator.titanium.view.TiAnimation;
 import org.appcelerator.titanium.view.TiUIView;
 
 import android.app.Activity;
+import android.app.ActivityOptions;
 import android.content.pm.ActivityInfo;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Message;
+import android.support.annotation.Nullable;
+import android.util.DisplayMetrics;
+import android.util.Pair;
+import android.view.Display;
 import android.view.View;
 
 @Kroll.proxy(propertyAccessors={
 	TiC.PROPERTY_EXIT_ON_CLOSE,
 	TiC.PROPERTY_FULLSCREEN,
+	TiC.PROPERTY_ON_BACK,
 	TiC.PROPERTY_TITLE,
 	TiC.PROPERTY_TITLEID,
 	TiC.PROPERTY_WINDOW_SOFT_INPUT_MODE
@@ -39,6 +51,7 @@ import android.view.View;
 public abstract class TiWindowProxy extends TiViewProxy
 {
 	private static final String TAG = "TiWindowProxy";
+	protected static final boolean LOLLIPOP_OR_GREATER = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP);
 	
 	private static final int MSG_FIRST_ID = KrollProxy.MSG_LAST_ID + 1;
 	private static final int MSG_OPEN = MSG_FIRST_ID + 100;
@@ -46,6 +59,7 @@ public abstract class TiWindowProxy extends TiViewProxy
 	protected static final int MSG_LAST_ID = MSG_FIRST_ID + 999;
 
 	private static WeakReference<TiWindowProxy> waitingForOpen;
+	private TiWeakList<KrollProxy> proxiesWaitingForActivity = new TiWeakList<KrollProxy>();
 
 	protected boolean opened, opening;
 	protected boolean focused;
@@ -55,7 +69,7 @@ public abstract class TiWindowProxy extends TiViewProxy
 	protected boolean inTab;
 	protected PostOpenListener postOpenListener;
 	protected boolean windowActivityCreated = false;
-
+	protected List< Pair<View, String> > sharedElementPairs;
 
 	public static interface PostOpenListener
 	{
@@ -71,6 +85,9 @@ public abstract class TiWindowProxy extends TiViewProxy
 	public TiWindowProxy()
 	{
 		inTab = false;
+		if (LOLLIPOP_OR_GREATER) {
+		    sharedElementPairs = new ArrayList< Pair<View, String> >();
+		}
 	}
 
 	@Override
@@ -189,6 +206,10 @@ public abstract class TiWindowProxy extends TiViewProxy
 		fireSyncEvent(TiC.EVENT_CLOSE, data);
 	}
 
+	public void addProxyWaitingForActivity(KrollProxy waitingProxy) {
+		proxiesWaitingForActivity.add(new WeakReference<KrollProxy>(waitingProxy));
+	}
+
 	protected void releaseViewsForActivityForcedToDestroy()
 	{
 		releaseViews();
@@ -228,9 +249,10 @@ public abstract class TiWindowProxy extends TiViewProxy
 		this.postOpenListener = listener;
 	}
 
-	public KrollDict handleToImage()
+	public TiBlob handleToImage()
 	{
-		return TiUIHelper.viewToImage(new KrollDict(), getActivity().getWindow().getDecorView());
+		KrollDict d = TiUIHelper.viewToImage(new KrollDict(), getActivity().getWindow().getDecorView());
+		return TiUIHelper.getImageFromDict(d);
 	}
 
 	/*
@@ -239,6 +261,16 @@ public abstract class TiWindowProxy extends TiViewProxy
 	public void onWindowActivityCreated()
 	{
 		windowActivityCreated = true;
+
+		synchronized (proxiesWaitingForActivity.synchronizedList()) {
+			for (KrollProxy proxy : proxiesWaitingForActivity.nonNull()) {
+				try {
+					proxy.attachActivityLifecycle(getActivity());
+				} catch (Throwable t) {
+					Log.e(TAG, "Error attaching activity to proxy: " + t.getMessage(), t);
+				}
+			}
+		}
 
 		// Make sure the activity opens according to any orientation modes 
 		// set on the window before the activity was actually created.
@@ -447,7 +479,12 @@ public abstract class TiWindowProxy extends TiViewProxy
 
 		if (activity != null)
 		{
-			return TiOrientationHelper.convertConfigToTiOrientationMode(activity.getResources().getConfiguration().orientation);
+		    DisplayMetrics dm = new DisplayMetrics();
+		    Display display = activity.getWindowManager().getDefaultDisplay();
+		    display.getMetrics(dm);
+		    int width = dm.widthPixels;
+		    int height = dm.heightPixels;
+		    return TiOrientationHelper.convertRotationToTiOrientationMode(display.getRotation(), width, height);
 		}
 
 		Log.e(TAG, "Unable to get orientation, activity not found for window", Log.DEBUG_MODE);
@@ -462,5 +499,48 @@ public abstract class TiWindowProxy extends TiViewProxy
 			return null;
 		}
 		return super.getParentForBubbling();
+	}
+	
+	@Kroll.method
+	public void addSharedElement(TiViewProxy view, String transitionName) {
+	    if (LOLLIPOP_OR_GREATER) {
+	        TiUIView v = view.peekView();
+	        if (v != null) {
+	            Pair< View,String > p = new Pair<View, String>(v.getNativeView(), transitionName);
+	            sharedElementPairs.add(p);
+	        }
+	    }
+	}
+
+	@Kroll.method
+	public void removeAllSharedElements() {
+	    if (LOLLIPOP_OR_GREATER) {
+	        sharedElementPairs.clear();
+	    }
+	}
+
+	/**
+	 * Helper method to create an activity options bundle. 
+	 * @param activity The activity on which options bundle should be created. 
+	 * @return The Bundle or null.  
+	 */
+	@SuppressWarnings("unchecked")
+	@Nullable
+	protected Bundle createActivityOptionsBundle(Activity activity) {
+	    if (hasActivityTransitions()) {
+	        Bundle b = ActivityOptions.makeSceneTransitionAnimation(activity, 
+	                sharedElementPairs.toArray(new Pair[sharedElementPairs.size()])).toBundle();
+	        return b;
+	    } else {
+	        return null;
+	    }
+	}
+	
+	/** 
+	 * @return true if this window has activity transitions  
+	 */
+	protected boolean hasActivityTransitions() {
+	    final boolean animated = TiConvert.toBoolean(getProperties(), TiC.PROPERTY_ANIMATED, true);
+	    return (LOLLIPOP_OR_GREATER && animated && sharedElementPairs != null && !sharedElementPairs.isEmpty());
 	}
 }

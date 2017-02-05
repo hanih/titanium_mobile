@@ -1,6 +1,6 @@
 /**
  * Appcelerator Titanium Mobile
- * Copyright (c) 2009-2013 by Appcelerator, Inc. All Rights Reserved.
+ * Copyright (c) 2009-2014 by Appcelerator, Inc. All Rights Reserved.
  * Licensed under the terms of the Apache Public License
  * Please see the LICENSE included with this distribution for details.
  */
@@ -131,14 +131,14 @@
     ENSURE_SINGLE_ARG(arg, NSString);
     __block NSString* eventId = [TiUtils stringValue:arg];
     __block id result = NULL;
-	dispatch_sync(dispatch_get_main_queue(),^{
+	TiThreadPerformOnMainThread(^{
         EKEventStore* ourStore = [self ourStore];
         if (ourStore == nil) {
             return ;
         }
         result = [ourStore eventWithIdentifier:[TiUtils stringValue:arg]];
         
-    });
+    }, YES);
     if (result != NULL) {
         EKEvent* event_ = [[self ourStore] eventWithIdentifier:[TiUtils stringValue:arg]];
         TiCalendarEvent* event = [[[TiCalendarEvent alloc] _initWithPageContext:[self executionContext]
@@ -150,16 +150,21 @@
     return NULL;
 }
 
--(NSArray*)getEventsBeteenDates:(id)args
+-(NSArray*)getEventsBetweenDates:(id)args
 {
     ENSURE_ARG_COUNT(args, 2);
-    NSString* start, *end;
+    NSDate *start = nil;
+    NSDate *end = nil;
     
-    ENSURE_ARG_AT_INDEX(start, args, 0, NSString);
-    ENSURE_ARG_AT_INDEX(end, args, 1, NSString);
-
-    NSArray* events = [self _fetchAllEventsbetweenDate:[TiUtils dateForUTCDate:start]
-                                              andDate:[TiUtils dateForUTCDate:end]];
+    if ([[args objectAtIndex:0] isKindOfClass:[NSDate class]] && [[args objectAtIndex:1] isKindOfClass:[NSDate class]]){
+        start = [args objectAtIndex:0];
+        end =  [args objectAtIndex:1];
+    } else if ([[args objectAtIndex:0] isKindOfClass:[NSString class]] && [[args objectAtIndex:1] isKindOfClass:[NSString class]]) {
+        start = [TiUtils dateForUTCDate:[args objectAtIndex:0]];
+        end   = [TiUtils dateForUTCDate:[args objectAtIndex:1]];
+    }
+    NSArray* events = [self _fetchAllEventsbetweenDate:start
+                                              andDate:end];
     return [TiCalendarEvent convertEvents:events withContext:[self executionContext]  calendar:[self calendar]  module:module];
 }
 
@@ -243,9 +248,6 @@
     date1 = [cal dateFromComponents:comps];
     
     NSTimeInterval secondsPerDay = 24 * 60 * 60;
-    NSRange days = [cal rangeOfUnit:NSDayCalendarUnit
-                             inUnit:NSMonthCalendarUnit
-                            forDate:date1];
     [comps setYear:year+1];
     date2 = [cal dateFromComponents:comps];
     
@@ -289,6 +291,35 @@
     return [[self calendar] title];
 }
 
+-(NSString*)sourceTitle
+{
+    __block id result;
+    TiThreadPerformOnMainThread(^{
+        result = [[[self calendar] source] title];
+    },YES);
+    
+    return result;
+}
+
+-(NSNumber*)sourceType
+{
+    __block id result;
+    TiThreadPerformOnMainThread(^{
+        result = NUMINT([[[self calendar] source] sourceType]);
+    },YES);
+    
+    return result;
+}
+
+-(NSString*)sourceIdentifier
+{
+    __block id result;
+    TiThreadPerformOnMainThread(^{
+        result = [[[self calendar] source] sourceIdentifier];
+    },YES);
+
+    return result;
+}
 
 @end
 
